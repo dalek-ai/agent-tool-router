@@ -58,6 +58,78 @@ class Router:
         vocab = (candidate / "vocab.txt").read_text(encoding="utf-8").splitlines()
         return cls(vec=vec, centroids=centroids, vocab=vocab)
 
+    @classmethod
+    def from_examples(
+        cls,
+        examples: Iterable[tuple[str, Iterable[str]]],
+        *,
+        ngram_range: tuple[int, int] = (1, 2),
+        min_df: int = 1,
+        sublinear_tf: bool = True,
+        max_features: int = 50000,
+    ) -> "Router":
+        """Build a Router in memory from a list of (task, tools) pairs.
+
+        Use this when you already know your tool set and have a handful of
+        example tasks per tool. No persistence, no train/test split — just a
+        same-shape centroid retriever as the pretrained models, fit on your
+        own data.
+
+        >>> r = Router.from_examples([
+        ...     ("search the web for recent news on X", ["web_search"]),
+        ...     ("compute 2+2", ["calculator"]),
+        ... ])
+        >>> r.route("look up tomorrow's weather online", k=1)
+        ['web_search']
+        """
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.preprocessing import normalize
+
+        tasks: list[str] = []
+        tool_lists: list[list[str]] = []
+        for task, tools in examples:
+            t = (task or "").strip()
+            tl = [n for n in tools if isinstance(n, str) and n]
+            if not t or not tl:
+                continue
+            tasks.append(t)
+            tool_lists.append(tl)
+        if not tasks:
+            raise ValueError("from_examples: no usable (task, tools) pairs.")
+
+        vocab = sorted({n for tl in tool_lists for n in tl})
+        if not vocab:
+            raise ValueError("from_examples: no tool names found.")
+        name_to_idx = {n: i for i, n in enumerate(vocab)}
+
+        # min_df clamps to corpus size to avoid silently dropping all features
+        # on tiny example sets — this constructor is meant for tiny example sets.
+        effective_min_df = max(1, min(min_df, len(tasks)))
+        vec = TfidfVectorizer(
+            max_features=max_features,
+            ngram_range=ngram_range,
+            min_df=effective_min_df,
+            sublinear_tf=sublinear_tf,
+            lowercase=True,
+        )
+        X = vec.fit_transform(tasks)
+        n_feat = X.shape[1]
+
+        V = len(vocab)
+        centroids = np.zeros((V, n_feat), dtype=np.float64)
+        counts = np.zeros(V, dtype=np.int64)
+        for row_i, tl in enumerate(tool_lists):
+            row = X[row_i].toarray().ravel()
+            for tool in set(tl):
+                tidx = name_to_idx[tool]
+                centroids[tidx] += row
+                counts[tidx] += 1
+        nonzero = counts > 0
+        centroids[nonzero] /= counts[nonzero, None]
+        centroids = normalize(centroids, axis=1)
+
+        return cls(vec=vec, centroids=centroids, vocab=vocab)
+
     def route(
         self,
         task: str | Iterable[str],
