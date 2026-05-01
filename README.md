@@ -70,8 +70,42 @@ Per-source top-3 (same model, evaluated by source):
 - **Centroid retrieval is the floor, not the ceiling.** This is what a
   TF-IDF model and a bit of arithmetic can do. Anything you build should
   beat it; if it doesn't, the problem is your model, not the dataset.
+- **The pretrained model does not transfer across tool ecosystems.** Each
+  source brings its own private universe of tool names — `cancel_pending_order`
+  (tau-bench retail) doesn't appear in ToolACE; `Get Stock Price` (ToolACE)
+  doesn't appear in Hermes; etc. Leave-one-source-out vocab overlap is
+  **0.0%–0.1%** across the three sources we evaluated, which means
+  `from_pretrained("baseline-v0")` is only useful when your tools overlap
+  with the pretrained vocabulary. For your **own** tools, see
+  [`Router.from_examples()`](#use-it-on-your-own-tools).
 
-## Try it
+## Use it on your own tools
+
+If your agent has 5 custom tools (`web_search`, `internal_kb`,
+`run_sql`, ...) the pretrained model has never seen them. Build a router
+in memory from a small seed list of your own tasks:
+
+```python
+from agent_tool_router import Router
+
+r = Router.from_examples([
+    ("search the web for recent papers on X",     ["web_search"]),
+    ("look up the customer's order history",      ["internal_kb"]),
+    ("run a SQL query to count active users",     ["run_sql"]),
+    # ... ~10-30 examples per tool is enough to start
+])
+r.route("find the top sellers from last quarter", k=2)
+# ['run_sql', 'internal_kb']
+```
+
+A full ~70-line example, with five mock tools and 68 seed examples, is in
+[`examples/research_helper/`](examples/research_helper/). Run it:
+
+```bash
+python -m examples.research_helper.agent
+```
+
+## Try the pretrained model
 
 ```bash
 git clone https://github.com/dalek-ai/agent-tool-router.git
@@ -113,9 +147,12 @@ The interesting questions are downstream:
    most of the dataset (95% singleton long-tail) is currently dead weight.
 2. **Sequence routing.** The current model returns a set, not an ordered plan.
    The data has the order; we're just not using it yet.
-3. **Cross-source generalization.** Leave-one-source-out evaluation isn't
-   wired up yet — we don't actually know if the model is one-router-per-source
-   under the hood.
+3. **Cross-source generalization.** Leave-one-source-out is now wired up
+   (`router/eval/baseline_loso.py`) and confirms the negative result: vocab
+   overlap between the three sources is essentially zero, so the pretrained
+   model can't transfer. The interesting open question: *can a model learn
+   from tool **descriptions** rather than tool **names** to bridge across
+   ecosystems?*
 4. **Real traces.** Public benchmarks are great for bootstrapping but skewed
    toward synthetic prompts. Opt-in trace contribution is the long-game moat.
 
