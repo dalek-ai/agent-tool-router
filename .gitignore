@@ -1,0 +1,35 @@
+# Generated data — rebuild via scripts/make_dataset.sh
+data/
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+*.so
+.python-version
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Project state — kept private to the operator's local working dir
+# (these are autonomous-agent state files, not user-facing docs)
+CLAUDE.md
+STATE.md
+log.md
+inbox/
