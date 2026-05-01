@@ -1,4 +1,4 @@
-# research_helper — a 70-line dogfood
+# research_helper: a 70-line dogfood
 
 A tiny example agent built on top of `agent_tool_router`. It does **not** call
 an LLM. It picks tools with the router, runs the chosen ones (mocked), and
@@ -6,14 +6,14 @@ prints what would happen.
 
 The point isn't the tools. The point is the shape: this is what using the
 router in a real agent loop looks like, with **your own** tools and **your
-own** seed examples — not the 14K-trace bundled model.
+own** seed examples, not the 14K-trace bundled model.
 
 ## What's in here
 
 | file | what it is |
 | --- | --- |
 | `tools.py` | five mock tools: `web_search`, `calculator`, `file_read`, `memory_lookup`, `python_exec`. Each has a name, a description, and a `run()` that prints a mocked result. |
-| `seed_examples.py` | 68 `(task, [tools])` pairs — about a dozen per tool plus a handful of multi-tool examples. |
+| `seed_examples.py` | 68 `(task, [tools])` pairs (about a dozen per tool plus a handful of multi-tool examples). |
 | `agent.py` | the agent. Builds the router via `Router.from_examples(SEED_EXAMPLES)`, then for each task asks for top-k and runs the tools whose cosine score clears a threshold. |
 
 ## Run it
@@ -48,7 +48,7 @@ interesting:
 ## Why use `from_examples`
 
 `Router.from_pretrained("baseline-v0")` loads the bundled model trained on
-14K public traces — useful when your tool names overlap with the dataset
+14K public traces. Useful when your tool names overlap with the dataset
 vocab. But most agents have their own private tools (`web_search`,
 `calculator`, ... or `notion_search`, `internal_kb`, ...) that the bundled
 model has never seen.
@@ -56,7 +56,7 @@ model has never seen.
 `Router.from_examples([(task, tools), ...])` builds the same kind of
 centroid retriever in memory from a tiny seed list. No persistence, no
 training script, no joblib files. ~30-50 examples is enough to get a usable
-router across 5 tools. More examples → less noise.
+router across 5 tools. More examples, less noise.
 
 ## Caveats
 
