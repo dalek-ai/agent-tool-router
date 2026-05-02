@@ -134,6 +134,25 @@ A full ~70-line example, with five mock tools and 68 seed examples, is in
 python -m examples.research_helper.agent
 ```
 
+If you already have OpenAI-style function specs (each tool comes with a
+short natural-language description) and don't want to seed example tasks,
+you can build the same kind of router directly from `(name, description)`
+pairs. This is the same scoring rule that gave 73% top-3 cross-source in
+our LOSO eval:
+
+```python
+r = Router.from_descriptions([
+    ("web_search", "Search the web and return the top results."),
+    ("run_sql",    "Execute a SQL query against the warehouse and return rows."),
+    ("internal_kb","Look up a record in the internal customer knowledge base."),
+    # ... ideally 50+ tools; with <50 short descriptions TF-IDF is too thin
+])
+r.route("count how many customers churned last quarter", k=2)
+```
+
+For small tool sets, `from_examples()` works better because example tasks
+fit the vectorizer on richer text.
+
 ## Try the pretrained model
 
 ```bash

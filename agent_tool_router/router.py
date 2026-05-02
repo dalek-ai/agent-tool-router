@@ -130,6 +130,82 @@ class Router:
 
         return cls(vec=vec, centroids=centroids, vocab=vocab)
 
+    @classmethod
+    def from_descriptions(
+        cls,
+        descriptions: Iterable[tuple[str, str]],
+        *,
+        include_name: bool = True,
+        ngram_range: tuple[int, int] = (1, 2),
+        min_df: int = 1,
+        sublinear_tf: bool = True,
+        max_features: int = 50000,
+    ) -> "Router":
+        """Build a Router in memory from (tool_name, description) pairs.
+
+        Useful when you have OpenAI-style function specs but no example tasks.
+        Each tool's "centroid" is the TF-IDF vector of its description (plus
+        the name's subtokens by default), so routing is
+        cosine(task, description). This is the same scoring rule that gave
+        73.5% top-3 cross-source on Hermes held-out in our LOSO eval (see
+        router/eval/baseline_loso_descriptions.py); for tools whose
+        descriptions are domain-specific outliers, expect weaker results
+        (tau-bench's 23 customer-service tools scored 1.5x random).
+
+        Practical caveat: TF-IDF needs a reasonable vocabulary to discriminate.
+        With <50 tools and short descriptions the vocab is too thin and ranks
+        will be noisy. For small tool sets prefer Router.from_examples() with
+        a handful of (task, [tools]) pairs per tool, which fits the
+        vectorizer on richer task text.
+        """
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.preprocessing import normalize
+
+        import re
+
+        def _tool_doc(name: str, desc: str) -> str:
+            desc = (desc or "").strip()
+            if not include_name:
+                return desc
+            parts = re.split(r"[_\.\s\-]+", name or "")
+            subs: list[str] = []
+            for p in parts:
+                subs.extend(re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+", p))
+            name_text = " ".join(t.lower() for t in subs if len(t) >= 2)
+            return f"{desc} {name_text}".strip()
+
+        names: list[str] = []
+        docs: list[str] = []
+        seen: set[str] = set()
+        for name, desc in descriptions:
+            if not isinstance(name, str) or not name or name in seen:
+                continue
+            doc = _tool_doc(name, desc or "")
+            if not doc:
+                continue
+            seen.add(name)
+            names.append(name)
+            docs.append(doc)
+        if not names:
+            raise ValueError(
+                "from_descriptions: no usable (name, description) pairs."
+            )
+
+        effective_min_df = max(1, min(min_df, len(docs)))
+        vec = TfidfVectorizer(
+            max_features=max_features,
+            ngram_range=ngram_range,
+            min_df=effective_min_df,
+            sublinear_tf=sublinear_tf,
+            lowercase=True,
+        )
+        # Fit on the descriptions themselves. For larger corpora users can
+        # extend the fit corpus by passing pre-fit vectors, but the simple
+        # in-memory case fits and transforms in one pass.
+        X = vec.fit_transform(docs)
+        centroids = normalize(X, axis=1).toarray().astype(np.float64)
+        return cls(vec=vec, centroids=centroids, vocab=names)
+
     def route(
         self,
         task: str | Iterable[str],
