@@ -70,14 +70,43 @@ Per-source top-3 (same model, evaluated by source):
 - **Centroid retrieval is the floor, not the ceiling.** This is what a
   TF-IDF model and a bit of arithmetic can do. Anything you build should
   beat it; if it doesn't, the problem is your model, not the dataset.
-- **The pretrained model does not transfer across tool ecosystems.** Each
-  source brings its own private universe of tool names: `cancel_pending_order`
-  (tau-bench retail) doesn't appear in ToolACE; `Get Stock Price` (ToolACE)
-  doesn't appear in Hermes; etc. Leave-one-source-out vocab overlap is
-  **0.0%–0.1%** across the three sources we evaluated, which means
-  `from_pretrained("baseline-v0")` is only useful when your tools overlap
-  with the pretrained vocabulary. For your **own** tools, see
-  [`Router.from_examples()`](#use-it-on-your-own-tools).
+- **The pretrained model does not transfer across tool ecosystems via
+  names.** Each source brings its own private universe of tool names:
+  `cancel_pending_order` (tau-bench retail) doesn't appear in ToolACE;
+  `Get Stock Price` (ToolACE) doesn't appear in Hermes. Leave-one-source-out
+  vocab overlap is **0.0%–0.1%** across the three sources, so name-based
+  routing trained on N-1 sources scores ~0% on the held-out source. For
+  your **own** tools, see [`Router.from_examples()`](#use-it-on-your-own-tools).
+
+- **Even after stripping leaky rows, the cross-corpus baseline holds.**
+  Filtering out every row where the gold tool name appears verbatim or as
+  in-order subtokens within a 4-token window of the task text drops the
+  dataset from 14K to 10.4K rows but only moves the cross-corpus headline
+  from 56.4× to **30.6× random top-3**. See
+  `router/eval/baseline_cross_corpus_clean.py`.
+
+### Cross-source generalization via tool descriptions
+
+The roadmap line "can a model bridge ecosystems via tool *descriptions*
+rather than tool *names*?" is now answered. Yes, mostly.
+
+We extracted the natural-language description of every tool we could find
+(2.6K from Hermes, 16K from ToolACE, 29 from tau-bench, in
+`data/tool_descriptions.jsonl`) and re-ran leave-one-source-out, but
+scoring tools by `cosine(task, description)` instead of by training tool
+centroids on tool names. Description text only, no name subtokens:
+
+| held out | catalog size | top-1 | top-3 | top-3 vs random |
+|---|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 1 911 | 41.6% | 73.5% | **468× random** |
+| ToolACE | 10 065 | 22.5% | 34.6% | **1 162× random** |
+| tau-bench | 23 | 8.7% | 19.8% | 1.5× random |
+
+For comparison, the same setup with **names** scored 0% top-3 across all
+three sources. So descriptions transfer, names don't. tau-bench is the
+weak case because its 23 tools are domain-specific customer-service flows
+that have no analog in the training corpus, but it still beats random.
+Source: `router/eval/baseline_loso_descriptions.py`.
 
 ## Use it on your own tools
 
@@ -147,12 +176,13 @@ The interesting questions are downstream:
    most of the dataset (95% singleton long-tail) is currently dead weight.
 2. **Sequence routing.** The current model returns a set, not an ordered plan.
    The data has the order; we're just not using it yet.
-3. **Cross-source generalization.** Leave-one-source-out is now wired up
-   (`router/eval/baseline_loso.py`) and confirms the negative result: vocab
-   overlap between the three sources is essentially zero, so the pretrained
-   model can't transfer. The interesting open question: *can a model learn
-   from tool **descriptions** rather than tool **names** to bridge across
-   ecosystems?*
+3. **Cross-source generalization.** Names don't transfer (LOSO ≈ 0%);
+   descriptions do (LOSO ≈ 35–74% top-3 on the two held-out sources with
+   broad catalogs; see Caveats). Next step: make `Router` first-class on
+   tool descriptions, not just names. Today the SDK assumes you pass
+   `(task, [tool_names])`; tomorrow it should accept
+   `(task, [(name, description)])` and pick the path automatically based
+   on what you give it.
 4. **Real traces.** Public benchmarks are great for bootstrapping but skewed
    toward synthetic prompts. Opt-in trace contribution is the long-game moat.
 
@@ -162,5 +192,5 @@ MIT. Be kind.
 
 ## Status
 
-Day 3 of a 14-day phase 0. We're still figuring out the right shape of this
+Day 4 of a 14-day phase 0. We're still figuring out the right shape of this
 thing. Issues / PRs welcome. Break things early.

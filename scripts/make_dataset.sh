@@ -23,5 +23,10 @@ fi
 python3 -c "import datasets" >/dev/null 2>&1 || pip install --user datasets
 
 python3 router/index/aggregate.py
+
+# Tool descriptions (used by router/eval/baseline_loso_descriptions.py).
+python3 router/index/build_tool_descriptions.py || \
+    echo "[warn] tool descriptions build skipped"
+
 echo
-echo "Done. data/traces.jsonl is ready."
+echo "Done. data/traces.jsonl and data/tool_descriptions.jsonl are ready."
