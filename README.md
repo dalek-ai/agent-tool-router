@@ -108,6 +108,27 @@ weak case because its 23 tools are domain-specific customer-service flows
 that have no analog in the training corpus, but it still beats random.
 Source: `router/eval/baseline_loso_descriptions.py`.
 
+A pre-trained sentence encoder (sentence-transformers/all-MiniLM-L6-v2)
+gives a different shape of result. Same protocol, descriptions only:
+
+| held out | catalog | TF-IDF top-3 | bi-encoder top-3 | hybrid α=0.5 top-3 | hybrid (best α) top-3 |
+|---|---:|---:|---:|---:|---:|
+| Hermes | 1 911 | 73.5% | 67.9% | 77.2% | **78.5% (α=0.7)** |
+| ToolACE | 10 065 | 34.6% | 58.5% | 61.8% | **62.1% (α=0.4)** |
+| tau-bench | 23 | 19.8% | 31.1% | 29.2% | **31.3% (α=0.1)** |
+
+The two backends are complementary: TF-IDF wins when task and description
+share lexical surface (Hermes), the bi-encoder wins when the description
+paraphrases the task without sharing words (ToolACE, tau-bench). A flat
+hybrid `0.5·cos_tfidf + 0.5·cos_encoder` Pareto-improves on Hermes and
+ToolACE, with a small regression on tau-bench. Per-source-tuned α improves
+all three. Source: `router/eval/baseline_loso_descriptions_hybrid.py`.
+
+The bi-encoder pulls in `sentence-transformers` and torch (~250 Mo of
+deps), so we don't ship it in the default install. The TF-IDF path is the
+SDK default; the encoder path is research-only at this point and lives in
+the eval scripts.
+
 ## Use it on your own tools
 
 If your agent has 5 custom tools (`web_search`, `internal_kb`,
@@ -211,5 +232,5 @@ MIT. Be kind.
 
 ## Status
 
-Day 4 of a 14-day phase 0. We're still figuring out the right shape of this
+Day 6 of a 14-day phase 0. We're still figuring out the right shape of this
 thing. Issues / PRs welcome. Break things early.
