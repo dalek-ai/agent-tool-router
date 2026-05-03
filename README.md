@@ -126,8 +126,8 @@ all three. Source: `router/eval/baseline_loso_descriptions_hybrid.py`.
 
 The bi-encoder pulls in `sentence-transformers` and torch (~250 Mo of
 deps), so we don't ship it in the default install. The TF-IDF path is the
-SDK default; the encoder path is research-only at this point and lives in
-the eval scripts.
+SDK default; the encoder and hybrid backends are available behind an
+optional extras: `pip install agent-tool-router[encoder]`.
 
 ## Use it on your own tools
 
@@ -173,6 +173,22 @@ r.route("count how many customers churned last quarter", k=2)
 
 For small tool sets, `from_examples()` works better because example tasks
 fit the vectorizer on richer text.
+
+If your tool descriptions paraphrase tasks more than they share vocabulary
+with them (a common case for OpenAPI / OpenAI specs), switch to the
+encoder or hybrid backend:
+
+```python
+r = Router.from_descriptions(specs, backend="hybrid", alpha=0.5)
+# requires: pip install agent-tool-router[encoder]
+```
+
+`backend="tfidf"` is the default and pulls no extra deps.
+`backend="encoder"` runs sentence-transformers/all-MiniLM-L6-v2 and
+scores by cosine on its embeddings. `backend="hybrid"` linearly combines
+TF-IDF and encoder cosines: in our LOSO eval the hybrid Pareto-dominates
+both solo backends with `alpha=0.5` on 2/3 held-out sources (see the
+table above).
 
 ## Try the pretrained model
 

@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["datasets>=2.16"]
+encoder = ["sentence-transformers>=2.2"]
 
 [project.scripts]
 agent-tool-router = "agent_tool_router.__main__:main"

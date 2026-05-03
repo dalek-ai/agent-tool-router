@@ -7,13 +7,19 @@ A trained Router holds three artifacts:
 
 Scoring is one sparse-times-dense matmul. No GPU, no torch, no LLM call —
 this is the boring baseline that the rest of the project has to beat.
+
+For the description-based constructor, an optional bi-encoder backend is
+available behind the ``[encoder]`` extras: pass ``backend="encoder"`` to
+score by sentence-transformer cosine, or ``backend="hybrid"`` for a linear
+combination ``alpha * cos_tfidf + (1 - alpha) * cos_encoder``. This requires
+``pip install agent-tool-router[encoder]`` (pulls in torch, ~250 MB).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import joblib
 import numpy as np
@@ -23,6 +29,8 @@ _PACKAGE_ROOT = Path(__file__).resolve().parent
 _REPO_ROOT = _PACKAGE_ROOT.parent
 _BUILTIN_MODELS_DIR = _REPO_ROOT / "models"
 
+DEFAULT_ENCODER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
 
 @dataclass
 class RouteResult:
@@ -31,11 +39,39 @@ class RouteResult:
 
 
 class Router:
-    def __init__(self, vec, centroids: np.ndarray, vocab: list[str]):
+    def __init__(
+        self,
+        vec=None,
+        centroids: Optional[np.ndarray] = None,
+        vocab: Optional[list[str]] = None,
+        *,
+        encoder_model=None,
+        encoder_centroids: Optional[np.ndarray] = None,
+        alpha: float = 1.0,
+        backend: str = "tfidf",
+    ):
+        if vocab is None:
+            raise ValueError("Router requires a vocab list.")
+        if backend not in ("tfidf", "encoder", "hybrid"):
+            raise ValueError(
+                f"backend must be one of 'tfidf', 'encoder', 'hybrid'; got {backend!r}"
+            )
+        if backend in ("tfidf", "hybrid") and (vec is None or centroids is None):
+            raise ValueError(f"backend={backend!r} requires vec and centroids.")
+        if backend in ("encoder", "hybrid") and (
+            encoder_model is None or encoder_centroids is None
+        ):
+            raise ValueError(
+                f"backend={backend!r} requires encoder_model and encoder_centroids."
+            )
         self.vec = vec
         self.centroids = centroids
         self.vocab = list(vocab)
         self._name_to_idx = {n: i for i, n in enumerate(self.vocab)}
+        self.encoder_model = encoder_model
+        self.encoder_centroids = encoder_centroids
+        self.alpha = float(alpha)
+        self.backend = backend
 
     @classmethod
     def from_pretrained(cls, name_or_path: str) -> "Router":
@@ -135,6 +171,9 @@ class Router:
         cls,
         descriptions: Iterable[tuple[str, str]],
         *,
+        backend: str = "tfidf",
+        alpha: float = 0.5,
+        encoder_model_name: str = DEFAULT_ENCODER_MODEL,
         include_name: bool = True,
         ngram_range: tuple[int, int] = (1, 2),
         min_df: int = 1,
@@ -152,12 +191,29 @@ class Router:
         descriptions are domain-specific outliers, expect weaker results
         (tau-bench's 23 customer-service tools scored 1.5x random).
 
-        Practical caveat: TF-IDF needs a reasonable vocabulary to discriminate.
-        With <50 tools and short descriptions the vocab is too thin and ranks
-        will be noisy. For small tool sets prefer Router.from_examples() with
-        a handful of (task, [tools]) pairs per tool, which fits the
-        vectorizer on richer task text.
+        Backends:
+          - "tfidf"   : default, no extra dependency. Wins when task and tool
+                        descriptions share lexical surface.
+          - "encoder" : sentence-transformer cosine. Wins when descriptions
+                        paraphrase the task semantically. Requires
+                        ``pip install agent-tool-router[encoder]``.
+          - "hybrid"  : linear combination
+                        ``alpha * cos_tfidf + (1 - alpha) * cos_encoder``.
+                        Pareto-dominates both backends with alpha=0.5 on 2/3
+                        held-out sources in our LOSO eval. Same extras
+                        requirement as ``encoder``.
+
+        Practical caveat (tfidf only): TF-IDF needs a reasonable vocabulary to
+        discriminate. With <50 tools and short descriptions the vocab is too
+        thin and ranks will be noisy. For small tool sets prefer
+        Router.from_examples() with a handful of (task, [tools]) pairs per
+        tool, OR switch to backend="encoder" / "hybrid".
         """
+        if backend not in ("tfidf", "encoder", "hybrid"):
+            raise ValueError(
+                f"backend must be one of 'tfidf', 'encoder', 'hybrid'; got {backend!r}"
+            )
+
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.preprocessing import normalize
 
@@ -191,20 +247,45 @@ class Router:
                 "from_descriptions: no usable (name, description) pairs."
             )
 
-        effective_min_df = max(1, min(min_df, len(docs)))
-        vec = TfidfVectorizer(
-            max_features=max_features,
-            ngram_range=ngram_range,
-            min_df=effective_min_df,
-            sublinear_tf=sublinear_tf,
-            lowercase=True,
+        vec = None
+        centroids = None
+        if backend in ("tfidf", "hybrid"):
+            effective_min_df = max(1, min(min_df, len(docs)))
+            vec = TfidfVectorizer(
+                max_features=max_features,
+                ngram_range=ngram_range,
+                min_df=effective_min_df,
+                sublinear_tf=sublinear_tf,
+                lowercase=True,
+            )
+            X = vec.fit_transform(docs)
+            centroids = normalize(X, axis=1).toarray().astype(np.float64)
+
+        encoder_model = None
+        encoder_centroids = None
+        if backend in ("encoder", "hybrid"):
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError as e:
+                raise ImportError(
+                    f"backend={backend!r} needs sentence-transformers. "
+                    f"Install with: pip install agent-tool-router[encoder]"
+                ) from e
+            encoder_model = SentenceTransformer(encoder_model_name)
+            encoder_centroids = encoder_model.encode(
+                docs, batch_size=64, show_progress_bar=False,
+                normalize_embeddings=True, convert_to_numpy=True,
+            ).astype(np.float32, copy=False)
+
+        return cls(
+            vec=vec,
+            centroids=centroids,
+            vocab=names,
+            encoder_model=encoder_model,
+            encoder_centroids=encoder_centroids,
+            alpha=alpha,
+            backend=backend,
         )
-        # Fit on the descriptions themselves. For larger corpora users can
-        # extend the fit corpus by passing pre-fit vectors, but the simple
-        # in-memory case fits and transforms in one pass.
-        X = vec.fit_transform(docs)
-        centroids = normalize(X, axis=1).toarray().astype(np.float64)
-        return cls(vec=vec, centroids=centroids, vocab=names)
 
     def route(
         self,
@@ -222,12 +303,29 @@ class Router:
         tasks = [task] if single else list(task)
         if not tasks:
             return []
-        X = self.vec.transform(tasks)
-        # Cosine = (normalized X) @ centroids.T  (centroids already normalized).
+
         from sklearn.preprocessing import normalize
 
-        Xn = normalize(X, axis=1)
-        scores = np.asarray(Xn @ self.centroids.T)
+        scores_tfidf = None
+        scores_enc = None
+        if self.backend in ("tfidf", "hybrid"):
+            X = self.vec.transform(tasks)
+            Xn = normalize(X, axis=1)
+            scores_tfidf = np.asarray(Xn @ self.centroids.T)
+        if self.backend in ("encoder", "hybrid"):
+            task_enc = self.encoder_model.encode(
+                tasks, batch_size=64, show_progress_bar=False,
+                normalize_embeddings=True, convert_to_numpy=True,
+            ).astype(np.float32, copy=False)
+            scores_enc = task_enc @ self.encoder_centroids.T
+
+        if self.backend == "tfidf":
+            scores = scores_tfidf
+        elif self.backend == "encoder":
+            scores = scores_enc
+        else:
+            scores = self.alpha * scores_tfidf + (1.0 - self.alpha) * scores_enc
+
         ranked = np.argsort(-scores, axis=1)
         out = []
         for row_i in range(scores.shape[0]):
