@@ -211,23 +211,35 @@ unrouted. `baseline-v1-desc` instead builds one centroid per *tool
 description*, with no frequency filter, and covers all 18 671 tools whose
 description is non-empty.
 
-Per-call top-k accuracy of `baseline-v1-desc` against the full 18 671-tool
-catalog, on 30 425 calls drawn from the corpus (random baseline = k/V):
+Per-call top-3 accuracy of `baseline-v1-desc` against the full 18 671-tool
+catalog, on 30 425 calls drawn from the corpus, by backend (random baseline
+= 3/V = 0.016%):
 
-| source | n calls | top-1 | top-3 | top-5 | top-10 |
-|---|---:|---:|---:|---:|---:|
-| Hermes function-calling-v1 | 4 376 | 37.7% | **74.3%** | 83.6% | 90.2% |
-| ToolACE | 17 169 | 35.1% | **52.4%** | 59.0% | 66.7% |
-| tau-bench | 8 880 | 1.2% | **3.2%** | 5.0% | 9.6% |
-| overall | 30 425 | 25.6% | **41.2%** | 46.8% | 53.4% |
+| source | n calls | tfidf | encoder | hybrid α=0.5 |
+|---|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 74.3% | 60.7% | **74.9%** |
+| ToolACE | 17 169 | 52.4% | 54.8% | **62.8%** |
+| tau-bench | 8 880 | 3.2% | 6.1% | **9.9%** |
+| overall | 30 425 | 41.2% | 41.4% | **49.1%** |
 
-Read the tau-bench row carefully. The same 23 customer-service tools that
-score 19.8% top-3 against a restricted catalog (LOSO eval, see below)
-collapse to 3.2% against the full v1-desc catalog because the 18 000 ToolACE
-and Hermes confounders win against domain-specific descriptions. The
-takeaway: **`baseline-v1-desc` is a discoverability layer for long-tail
+The two backends look tied on overall top-3 (41.2% vs 41.4%) but they get
+different things right: TF-IDF wins on Hermes (lexical surface overlap),
+the bi-encoder wins on ToolACE and tau-bench (semantic paraphrase). Their
+linear combination Pareto-dominates both on every source and every k, +7.9pp
+overall. The encoder backend is opt-in behind `pip install agent-tool-router[encoder]`
+(adds torch + sentence-transformers, ~250 MB).
+
+Read the tau-bench row carefully even at 9.9% hybrid. The same 23
+customer-service tools score 19.8% top-3 against a restricted catalog (LOSO
+eval, see below) and only 9.9% against the full v1-desc catalog because the
+18 000 ToolACE and Hermes confounders win against domain-specific descriptions.
+The takeaway: **`baseline-v1-desc` is a discoverability layer for long-tail
 public tools, not a substitute for routing on your own narrow catalog**.
 For domain-specific tool sets, use `Router.from_descriptions(your_own)`.
+
+Reproduce: `python -m router.eval.eval_baseline_v1_desc` (tfidf shipped
+model), `python -m router.eval.eval_v1_desc_encoder [--hybrid]` (encoder /
+hybrid, rebuilt from `data/tool_descriptions.jsonl`).
 
 CLI:
 
