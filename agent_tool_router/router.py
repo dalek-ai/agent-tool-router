@@ -23,6 +23,7 @@ from typing import Iterable, Optional
 
 import joblib
 import numpy as np
+import scipy.sparse as sp
 
 # Where bundled pretrained models live, relative to this file.
 _PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -90,7 +91,16 @@ class Router:
                 f"`python -m agent_tool_router.train --out models/<name>`."
             )
         vec = joblib.load(candidate / "vectorizer.joblib")
-        centroids = np.load(candidate / "centroids.npy")
+        sparse_path = candidate / "centroids.npz"
+        dense_path = candidate / "centroids.npy"
+        if sparse_path.exists():
+            centroids = sp.load_npz(sparse_path)
+        elif dense_path.exists():
+            centroids = np.load(dense_path)
+        else:
+            raise FileNotFoundError(
+                f"No centroids found at {sparse_path} or {dense_path}."
+            )
         vocab = (candidate / "vocab.txt").read_text(encoding="utf-8").splitlines()
         return cls(vec=vec, centroids=centroids, vocab=vocab)
 
@@ -259,7 +269,7 @@ class Router:
                 lowercase=True,
             )
             X = vec.fit_transform(docs)
-            centroids = normalize(X, axis=1).toarray().astype(np.float64)
+            centroids = normalize(X, axis=1).tocsr()
 
         encoder_model = None
         encoder_centroids = None
@@ -311,7 +321,10 @@ class Router:
         if self.backend in ("tfidf", "hybrid"):
             X = self.vec.transform(tasks)
             Xn = normalize(X, axis=1)
-            scores_tfidf = np.asarray(Xn @ self.centroids.T)
+            product = Xn @ self.centroids.T
+            scores_tfidf = (
+                product.toarray() if sp.issparse(product) else np.asarray(product)
+            )
         if self.backend in ("encoder", "hybrid"):
             task_enc = self.encoder_model.encode(
                 tasks, batch_size=64, show_progress_bar=False,
@@ -345,6 +358,9 @@ class Router:
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.vec, path / "vectorizer.joblib")
-        np.save(path / "centroids.npy", self.centroids)
+        if sp.issparse(self.centroids):
+            sp.save_npz(path / "centroids.npz", self.centroids.tocsr())
+        else:
+            np.save(path / "centroids.npy", self.centroids)
         (path / "vocab.txt").write_text("\n".join(self.vocab), encoding="utf-8")
         return path

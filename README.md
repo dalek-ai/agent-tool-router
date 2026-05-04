@@ -200,7 +200,19 @@ pip install -e .
 # Optional: rebuild the dataset and a fresh model.
 bash scripts/make_dataset.sh
 python -m agent_tool_router.train --out models/baseline-v0
+
+# Description-based long-tail model (18 671 tools, sparse centroids, ~6 MB).
+python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc
 ```
+
+`baseline-v0` covers the 265 tool names that appear at least 3 times in the
+training corpus, so the long tail (singletons, synthetic ToolACE entries) is
+unrouted. `baseline-v1-desc` instead builds one centroid per *tool
+description*, with no frequency filter, and covers all 18 671 tools whose
+description is non-empty. Trade-off: more coverage, more noise — generic
+queries hit ToolACE synthetic look-alikes. Useful as the cold-start fallback
+when your tool isn't in `baseline-v0`'s vocab; for production use, route via
+`Router.from_descriptions` on your own catalog.
 
 CLI:
 
