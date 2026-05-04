@@ -209,10 +209,25 @@ python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc
 training corpus, so the long tail (singletons, synthetic ToolACE entries) is
 unrouted. `baseline-v1-desc` instead builds one centroid per *tool
 description*, with no frequency filter, and covers all 18 671 tools whose
-description is non-empty. Trade-off: more coverage, more noise — generic
-queries hit ToolACE synthetic look-alikes. Useful as the cold-start fallback
-when your tool isn't in `baseline-v0`'s vocab; for production use, route via
-`Router.from_descriptions` on your own catalog.
+description is non-empty.
+
+Per-call top-k accuracy of `baseline-v1-desc` against the full 18 671-tool
+catalog, on 30 425 calls drawn from the corpus (random baseline = k/V):
+
+| source | n calls | top-1 | top-3 | top-5 | top-10 |
+|---|---:|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 37.7% | **74.3%** | 83.6% | 90.2% |
+| ToolACE | 17 169 | 35.1% | **52.4%** | 59.0% | 66.7% |
+| tau-bench | 8 880 | 1.2% | **3.2%** | 5.0% | 9.6% |
+| overall | 30 425 | 25.6% | **41.2%** | 46.8% | 53.4% |
+
+Read the tau-bench row carefully. The same 23 customer-service tools that
+score 19.8% top-3 against a restricted catalog (LOSO eval, see below)
+collapse to 3.2% against the full v1-desc catalog because the 18 000 ToolACE
+and Hermes confounders win against domain-specific descriptions. The
+takeaway: **`baseline-v1-desc` is a discoverability layer for long-tail
+public tools, not a substitute for routing on your own narrow catalog**.
+For domain-specific tool sets, use `Router.from_descriptions(your_own)`.
 
 CLI:
 
