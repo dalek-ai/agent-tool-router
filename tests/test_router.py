@@ -12,6 +12,7 @@ installed, since they require ~250 MB of optional deps.
 
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 import unittest
@@ -22,6 +23,14 @@ import scipy.sparse as sp
 
 from agent_tool_router import Router
 from agent_tool_router.router import RouteResult
+
+
+def _has_sentence_transformers() -> bool:
+    try:
+        import sentence_transformers  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 class TestFromExamples(unittest.TestCase):
@@ -154,6 +163,88 @@ class TestSaveLoadRoundtrip(unittest.TestCase):
         self.assertEqual(r2.vocab, r.vocab)
         self.assertEqual(r2.route("cancel my order please", k=1),
                          r.route("cancel my order please", k=1))
+
+    def test_config_json_written_for_tfidf(self):
+        r = Router.from_descriptions([
+            ("web_search", "Search the web"),
+            ("calculator", "Evaluate math"),
+        ])
+        r.save(self.tmpdir / "model")
+        cfg_path = self.tmpdir / "model" / "config.json"
+        self.assertTrue(cfg_path.exists())
+        cfg = json.loads(cfg_path.read_text())
+        self.assertEqual(cfg["backend"], "tfidf")
+        self.assertNotIn("encoder_model_name", cfg)
+        self.assertFalse(
+            (self.tmpdir / "model" / "encoder_centroids.npy").exists()
+        )
+
+    @unittest.skipUnless(
+        _has_sentence_transformers(),
+        "sentence-transformers not installed",
+    )
+    def test_hybrid_roundtrip_with_lazy_load(self):
+        r = Router.from_descriptions(
+            [
+                ("web_search", "Search the public web for a query"),
+                ("calculator", "Evaluate arithmetic expressions"),
+                ("cancel_order", "Cancel a pending customer order"),
+            ],
+            backend="hybrid",
+            alpha=0.5,
+        )
+        r.save(self.tmpdir / "model")
+        self.assertTrue(
+            (self.tmpdir / "model" / "encoder_centroids.npy").exists()
+        )
+        cfg = json.loads(
+            (self.tmpdir / "model" / "config.json").read_text()
+        )
+        self.assertEqual(cfg["backend"], "hybrid")
+        self.assertEqual(cfg["alpha"], 0.5)
+        self.assertIn("encoder_model_name", cfg)
+
+        r2 = Router.from_pretrained(str(self.tmpdir / "model"))
+        self.assertEqual(r2.backend, "hybrid")
+        self.assertEqual(r2.vocab, r.vocab)
+        # Lazy-load: encoder model isn't instantiated until first route().
+        self.assertIsNone(r2.encoder_model)
+        out = r2.route("cancel my order please", k=1)
+        self.assertEqual(out, ["cancel_order"])
+        self.assertIsNotNone(r2.encoder_model)
+
+    @unittest.skipUnless(
+        _has_sentence_transformers(),
+        "sentence-transformers not installed",
+    )
+    def test_encoder_only_roundtrip(self):
+        r = Router.from_descriptions(
+            [
+                ("web_search", "Search the public web for a query"),
+                ("calculator", "Evaluate arithmetic expressions"),
+                ("cancel_order", "Cancel a pending customer order"),
+            ],
+            backend="encoder",
+        )
+        r.save(self.tmpdir / "model")
+        # Encoder-only model has no tfidf artifacts.
+        self.assertFalse(
+            (self.tmpdir / "model" / "centroids.npz").exists()
+        )
+        self.assertFalse(
+            (self.tmpdir / "model" / "centroids.npy").exists()
+        )
+        self.assertFalse(
+            (self.tmpdir / "model" / "vectorizer.joblib").exists()
+        )
+        self.assertTrue(
+            (self.tmpdir / "model" / "encoder_centroids.npy").exists()
+        )
+
+        r2 = Router.from_pretrained(str(self.tmpdir / "model"))
+        self.assertEqual(r2.backend, "encoder")
+        out = r2.route("cancel my order please", k=1)
+        self.assertEqual(out, ["cancel_order"])
 
 
 class TestConstructorValidation(unittest.TestCase):
