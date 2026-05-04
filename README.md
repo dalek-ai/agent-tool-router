@@ -287,6 +287,14 @@ ToolACE 58.7% → 54.2% (-4.5pp). Weighted overall by n_calls drops 1.3pp.
 MiniLM-L6 stays the default; pass `--encoder-model BAAI/bge-small-en-v1.5`
 to the train script if Hermes/tau-bench is your weight class.
 
+Per-task min-max / z-score / rank normalization of `cos_tfidf` and
+`cos_enc` before the linear combo was also tested (`router/eval/eval_v1_desc_loso_calibration.py`).
+None of them pareto-dominate the unnormalized baseline at α=0.5: minmax
+and zscore each gain a couple of pp on Hermes and tau-bench but lose
+7-11pp on ToolACE, because ToolACE is 86% of the catalog and per-task
+rescaling amplifies same-source distractors when ToolACE is held out.
+The shipped pipeline keeps the unnormalized linear combo.
+
 CLI:
 
 ```bash
