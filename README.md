@@ -262,6 +262,24 @@ Reproduce: `python -m router.eval.eval_baseline_v1_desc` (tfidf shipped
 model), `python -m router.eval.eval_v1_desc_encoder [--hybrid]` (encoder /
 hybrid, rebuilt from `data/tool_descriptions.jsonl`).
 
+The same eval, but with the TF-IDF half **refit per held-out source** on
+N-1 sources only (encoder is pretrained, source-agnostic). This is the
+realistic cross-source number: how much does the shipped pipeline lose on
+a brand-new source it has never seen at training time?
+
+| held out | n calls | tfidf | encoder | hybrid α=0.5 |
+|---|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 70.3% | 60.7% | **72.3%** |
+| ToolACE | 17 169 | 36.5% | 54.8% | **58.7%** |
+| tau-bench | 8 880 | 10.1% | 6.1% | **11.1%** |
+
+Hybrid Pareto-dominates both solo backends on all three held-out sources.
+ToolACE TF-IDF drops sharply (52.4% → 36.5%, -15.9pp) when the vocabulary
+has not seen ToolACE descriptions; the encoder catches most of the fall.
+The shipped hybrid, by contrast, only loses 2.6pp on Hermes and 4.1pp on
+ToolACE vs the in-distribution number, and matches on tau-bench. Reproduce:
+`python -m router.eval.eval_v1_desc_loso_hybrid`.
+
 CLI:
 
 ```bash
