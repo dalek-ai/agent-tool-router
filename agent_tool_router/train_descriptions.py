@@ -46,6 +46,14 @@ def main() -> int:
     p.add_argument("--no-name", action="store_true",
                    help="exclude tool name subtokens from the description doc")
     p.add_argument("--max-features", type=int, default=50000)
+    p.add_argument("--backend", choices=("tfidf", "encoder", "hybrid"),
+                   default="tfidf",
+                   help="scoring backend; encoder/hybrid require the "
+                        "[encoder] extras (sentence-transformers + torch).")
+    p.add_argument("--alpha", type=float, default=0.5,
+                   help="hybrid mixing weight on tfidf (default 0.5)")
+    p.add_argument("--encoder-model",
+                   default="sentence-transformers/all-MiniLM-L6-v2")
     args = p.parse_args()
 
     rows = _load_descriptions(Path(args.descriptions))
@@ -55,12 +63,14 @@ def main() -> int:
     # Router.from_descriptions dedupes on name internally and drops empty docs.
     router = Router.from_descriptions(
         rows,
-        backend="tfidf",
+        backend=args.backend,
+        alpha=args.alpha,
+        encoder_model_name=args.encoder_model,
         include_name=not args.no_name,
         max_features=args.max_features,
     )
-    print(f"[vocab] {len(router.vocab)} tools after dedupe",
-          file=sys.stderr)
+    print(f"[vocab] {len(router.vocab)} tools after dedupe (backend="
+          f"{router.backend})", file=sys.stderr)
 
     out = router.save(args.out)
     print(f"[save] model -> {out}", file=sys.stderr)

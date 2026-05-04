@@ -48,6 +48,7 @@ class Router:
         *,
         encoder_model=None,
         encoder_centroids: Optional[np.ndarray] = None,
+        encoder_model_name: Optional[str] = None,
         alpha: float = 1.0,
         backend: str = "tfidf",
     ):
@@ -59,11 +60,9 @@ class Router:
             )
         if backend in ("tfidf", "hybrid") and (vec is None or centroids is None):
             raise ValueError(f"backend={backend!r} requires vec and centroids.")
-        if backend in ("encoder", "hybrid") and (
-            encoder_model is None or encoder_centroids is None
-        ):
+        if backend in ("encoder", "hybrid") and encoder_centroids is None:
             raise ValueError(
-                f"backend={backend!r} requires encoder_model and encoder_centroids."
+                f"backend={backend!r} requires encoder_centroids."
             )
         self.vec = vec
         self.centroids = centroids
@@ -71,13 +70,21 @@ class Router:
         self._name_to_idx = {n: i for i, n in enumerate(self.vocab)}
         self.encoder_model = encoder_model
         self.encoder_centroids = encoder_centroids
+        self.encoder_model_name = encoder_model_name
         self.alpha = float(alpha)
         self.backend = backend
 
     @classmethod
     def from_pretrained(cls, name_or_path: str) -> "Router":
         """Load a model by name (looked up in <repo>/models/<name>/) or by
-        absolute/relative directory path."""
+        absolute/relative directory path.
+
+        Model directories may contain encoder centroids
+        (`encoder_centroids.npy`) and a `config.json` setting the default
+        backend; those are loaded automatically when present. The encoder
+        model itself is lazy-loaded on the first route() call, so import
+        cost is paid only when actually used.
+        """
         candidate = Path(name_or_path)
         if not candidate.is_absolute():
             built_in = _BUILTIN_MODELS_DIR / name_or_path
@@ -90,19 +97,54 @@ class Router:
                 f"No model at {candidate}. Train one with "
                 f"`python -m agent_tool_router.train --out models/<name>`."
             )
-        vec = joblib.load(candidate / "vectorizer.joblib")
+
+        config_path = candidate / "config.json"
+        if config_path.exists():
+            import json as _json
+            cfg = _json.loads(config_path.read_text(encoding="utf-8"))
+        else:
+            cfg = {}
+        backend = cfg.get("backend", "tfidf")
+        alpha = float(cfg.get("alpha", 0.5))
+        encoder_model_name = cfg.get("encoder_model_name")
+
+        vec = None
+        centroids = None
+        vec_path = candidate / "vectorizer.joblib"
+        if vec_path.exists():
+            vec = joblib.load(vec_path)
         sparse_path = candidate / "centroids.npz"
         dense_path = candidate / "centroids.npy"
         if sparse_path.exists():
             centroids = sp.load_npz(sparse_path)
         elif dense_path.exists():
             centroids = np.load(dense_path)
-        else:
+        if backend in ("tfidf", "hybrid") and (vec is None or centroids is None):
             raise FileNotFoundError(
-                f"No centroids found at {sparse_path} or {dense_path}."
+                f"backend={backend!r} model at {candidate} is missing "
+                f"vectorizer.joblib or centroids.{{npz,npy}}."
             )
+
+        encoder_centroids = None
+        enc_path = candidate / "encoder_centroids.npy"
+        if enc_path.exists():
+            encoder_centroids = np.load(enc_path)
+        if backend in ("encoder", "hybrid") and encoder_centroids is None:
+            raise FileNotFoundError(
+                f"backend={backend!r} model at {candidate} is missing "
+                f"encoder_centroids.npy."
+            )
+
         vocab = (candidate / "vocab.txt").read_text(encoding="utf-8").splitlines()
-        return cls(vec=vec, centroids=centroids, vocab=vocab)
+        return cls(
+            vec=vec,
+            centroids=centroids,
+            vocab=vocab,
+            encoder_centroids=encoder_centroids,
+            encoder_model_name=encoder_model_name,
+            alpha=alpha,
+            backend=backend,
+        )
 
     @classmethod
     def from_examples(
@@ -293,6 +335,7 @@ class Router:
             vocab=names,
             encoder_model=encoder_model,
             encoder_centroids=encoder_centroids,
+            encoder_model_name=encoder_model_name if backend != "tfidf" else None,
             alpha=alpha,
             backend=backend,
         )
@@ -326,6 +369,16 @@ class Router:
                 product.toarray() if sp.issparse(product) else np.asarray(product)
             )
         if self.backend in ("encoder", "hybrid"):
+            if self.encoder_model is None:
+                try:
+                    from sentence_transformers import SentenceTransformer
+                except ImportError as e:
+                    raise ImportError(
+                        f"backend={self.backend!r} needs sentence-transformers. "
+                        f"Install with: pip install agent-tool-router[encoder]"
+                    ) from e
+                model_name = self.encoder_model_name or DEFAULT_ENCODER_MODEL
+                self.encoder_model = SentenceTransformer(model_name)
             task_enc = self.encoder_model.encode(
                 tasks, batch_size=64, show_progress_bar=False,
                 normalize_embeddings=True, convert_to_numpy=True,
@@ -357,10 +410,26 @@ class Router:
     def save(self, path: str | Path) -> Path:
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.vec, path / "vectorizer.joblib")
-        if sp.issparse(self.centroids):
-            sp.save_npz(path / "centroids.npz", self.centroids.tocsr())
-        else:
-            np.save(path / "centroids.npy", self.centroids)
+        if self.vec is not None and self.centroids is not None:
+            joblib.dump(self.vec, path / "vectorizer.joblib")
+            if sp.issparse(self.centroids):
+                sp.save_npz(path / "centroids.npz", self.centroids.tocsr())
+            else:
+                np.save(path / "centroids.npy", self.centroids)
+        if self.encoder_centroids is not None:
+            np.save(
+                path / "encoder_centroids.npy",
+                np.asarray(self.encoder_centroids, dtype=np.float32),
+            )
         (path / "vocab.txt").write_text("\n".join(self.vocab), encoding="utf-8")
+        config = {
+            "backend": self.backend,
+            "alpha": self.alpha,
+        }
+        if self.encoder_model_name:
+            config["encoder_model_name"] = self.encoder_model_name
+        import json as _json
+        (path / "config.json").write_text(
+            _json.dumps(config, indent=2) + "\n", encoding="utf-8",
+        )
         return path

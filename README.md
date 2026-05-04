@@ -203,13 +203,34 @@ python -m agent_tool_router.train --out models/baseline-v0
 
 # Description-based long-tail model (18 671 tools, sparse centroids, ~6 MB).
 python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc
+
+# Same long-tail catalog, hybrid TF-IDF + bi-encoder scoring (~35 MB total).
+# Requires the [encoder] extras at install time.
+python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc-hybrid \
+    --backend hybrid --alpha 0.5
 ```
 
-`baseline-v0` covers the 265 tool names that appear at least 3 times in the
-training corpus, so the long tail (singletons, synthetic ToolACE entries) is
-unrouted. `baseline-v1-desc` instead builds one centroid per *tool
-description*, with no frequency filter, and covers all 18 671 tools whose
-description is non-empty.
+Three pretrained models can be built from the commands above:
+
+- **`baseline-v0`** — 265 tool names that appear ≥ 3 times in the training
+  corpus, centroids built from task TF-IDF. The smallest model, no extra
+  dependencies, no long-tail coverage.
+- **`baseline-v1-desc`** — same 18 671-tool long-tail catalog, centroids
+  built from each tool's *description*. TF-IDF only, ~6 MB on disk, no
+  extra dependencies.
+- **`baseline-v1-desc-hybrid`** — same catalog, hybrid TF-IDF + bi-encoder
+  centroids, scored as `0.5 * cos_tfidf + 0.5 * cos_encoder`. ~35 MB on
+  disk; requires `pip install agent-tool-router[encoder]` at runtime.
+
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v1-desc-hybrid")
+r.route("cancel my order and refund the credit", k=3)
+# -> ['refundOrder', 'cancel_order', 'cancelDelivery']
+```
+
+The encoder model is lazy-loaded on the first `route()` call, so import
+cost is paid only when actually used.
 
 Per-call top-3 accuracy of `baseline-v1-desc` against the full 18 671-tool
 catalog, on 30 425 calls drawn from the corpus, by backend (random baseline
