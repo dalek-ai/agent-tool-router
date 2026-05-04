@@ -383,7 +383,10 @@ class Router:
                 tasks, batch_size=64, show_progress_bar=False,
                 normalize_embeddings=True, convert_to_numpy=True,
             ).astype(np.float32, copy=False)
-            scores_enc = task_enc @ self.encoder_centroids.T
+            # numpy 2.x emits spurious divide/overflow/invalid warnings from
+            # this matmul on float32 inputs even when the result is finite.
+            with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                scores_enc = task_enc @ self.encoder_centroids.T
 
         if self.backend == "tfidf":
             scores = scores_tfidf
