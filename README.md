@@ -280,6 +280,13 @@ The shipped hybrid, by contrast, only loses 2.6pp on Hermes and 4.1pp on
 ToolACE vs the in-distribution number, and matches on tau-bench. Reproduce:
 `python -m router.eval.eval_v1_desc_loso_hybrid`.
 
+A bigger encoder (BAAI/bge-small-en-v1.5, 33M params, ~38 MB centroids)
+was tested as an alternative to MiniLM-L6 (22M params, ~29 MB). LOSO refit
+top-3: Hermes 72.3% → 75.0% (+2.7pp), tau-bench 11.1% → 14.3% (+3.2pp),
+ToolACE 58.7% → 54.2% (-4.5pp). Weighted overall by n_calls drops 1.3pp.
+MiniLM-L6 stays the default; pass `--encoder-model BAAI/bge-small-en-v1.5`
+to the train script if Hermes/tau-bench is your weight class.
+
 CLI:
 
 ```bash
