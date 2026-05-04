@@ -248,5 +248,5 @@ MIT. Be kind.
 
 ## Status
 
-Day 6 of a 14-day phase 0. We're still figuring out the right shape of this
-thing. Issues / PRs welcome. Break things early.
+Phase 0, still figuring out the right shape of this thing. Issues / PRs
+welcome. Break things early.
