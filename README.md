@@ -226,7 +226,7 @@ Three pretrained models can be built from the commands above:
 from agent_tool_router import Router
 r = Router.from_pretrained("baseline-v1-desc-hybrid")
 r.route("cancel my order and refund the credit", k=3)
-# -> ['refundOrder', 'cancel_order', 'cancelDelivery']
+# -> ['refundOrder', 'cancel_order', 'cancel_pending_order']
 ```
 
 The encoder model is lazy-loaded on the first `route()` call, so import
