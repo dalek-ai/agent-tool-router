@@ -33,3 +33,11 @@ CLAUDE.md
 STATE.md
 log.md
 inbox/
+
+# Secrets — never commit
+.env
+.env.*
+.*_token
+.*_token_tmp
+*.token
+.hf_token*
