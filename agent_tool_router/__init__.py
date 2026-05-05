@@ -1,9 +1,9 @@
 """agent-tool-router — pick the right tools for an agent task.
 
 >>> from agent_tool_router import Router
->>> r = Router.from_pretrained("baseline-v0")
->>> r.route("Find me cheap flights from Paris to NYC next month", k=3)
-['search_flights', 'get_airport_code', 'compare_prices']
+>>> r = Router.from_pretrained("baseline-v1-desc")
+>>> r.route("cancel my pending order and refund the credit", k=3)
+['refundOrder', 'modify_pending_order_items', 'cancel_pending_order']
 """
 
 from .router import Router

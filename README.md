@@ -5,10 +5,13 @@
 ```python
 from agent_tool_router import Router
 
-r = Router.from_pretrained("baseline-v0")
-r.route("Cancel my pending order and refund the credit", k=3)
-# ['cancel_pending_order', 'return_delivered_order_items', 'transfer_to_human_agents']
+# First call downloads ~6 MB from huggingface.co/dalek-ai and caches it.
+r = Router.from_pretrained("baseline-v1-desc")
+r.route("cancel my pending order and refund the credit", k=3)
+# ['refundOrder', 'modify_pending_order_items', 'cancel_pending_order']
 ```
+
+Install: `pip install agent-tool-router`. No GPU, no torch, no API key.
 
 ## What this is
 
@@ -190,37 +193,21 @@ TF-IDF and encoder cosines: in our LOSO eval the hybrid Pareto-dominates
 both solo backends with `alpha=0.5` on 2/3 held-out sources (see the
 table above).
 
-## Try the pretrained model
+## Try the pretrained models
 
-```bash
-git clone https://github.com/dalek-ai/agent-tool-router.git
-cd agent-tool-router
-pip install -e .
-
-# Optional: rebuild the dataset and a fresh model.
-bash scripts/make_dataset.sh
-python -m agent_tool_router.train --out models/baseline-v0
-
-# Description-based long-tail model (18 671 tools, sparse centroids, ~6 MB).
-python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc
-
-# Same long-tail catalog, hybrid TF-IDF + bi-encoder scoring (~35 MB total).
-# Requires the [encoder] extras at install time.
-python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc-hybrid \
-    --backend hybrid --alpha 0.5
-```
-
-Three pretrained models can be built from the commands above:
+`Router.from_pretrained("<name>")` downloads from
+[huggingface.co/dalek-ai](https://huggingface.co/dalek-ai) on first call
+and caches locally. Three pretrained models are published:
 
 - **`baseline-v0`** — 265 tool names that appear ≥ 3 times in the training
   corpus, centroids built from task TF-IDF. The smallest model, no extra
-  dependencies, no long-tail coverage.
-- **`baseline-v1-desc`** — same 18 671-tool long-tail catalog, centroids
-  built from each tool's *description*. TF-IDF only, ~6 MB on disk, no
-  extra dependencies.
+  dependencies, no long-tail coverage. ~100 MB.
+- **`baseline-v1-desc`** — 18 671-tool long-tail catalog, centroids built
+  from each tool's *description*. TF-IDF only, ~6 MB, no extra dependencies.
 - **`baseline-v1-desc-hybrid`** — same catalog, hybrid TF-IDF + bi-encoder
-  centroids, scored as `0.5 * cos_tfidf + 0.5 * cos_encoder`. ~35 MB on
-  disk; requires `pip install agent-tool-router[encoder]` at runtime.
+  centroids scored as `0.5 * cos_tfidf + 0.5 * cos_encoder`. ~35 MB.
+  Requires `pip install agent-tool-router[encoder]` at runtime
+  (sentence-transformers + torch).
 
 ```python
 from agent_tool_router import Router
@@ -231,6 +218,24 @@ r.route("cancel my order and refund the credit", k=3)
 
 The encoder model is lazy-loaded on the first `route()` call, so import
 cost is paid only when actually used.
+
+### Rebuild from source
+
+If you prefer to retrain locally instead of downloading:
+
+```bash
+git clone https://github.com/dalek-ai/agent-tool-router.git
+cd agent-tool-router
+pip install -e .
+
+bash scripts/make_dataset.sh
+python -m agent_tool_router.train --out models/baseline-v0
+python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc
+python -m agent_tool_router.train_descriptions --out models/baseline-v1-desc-hybrid \
+    --backend hybrid --alpha 0.5  # requires the [encoder] extras
+```
+
+Local `models/<name>/` directories take precedence over HuggingFace lookups.
 
 Per-call top-3 accuracy of `baseline-v1-desc` against the full 18 671-tool
 catalog, on 30 425 calls drawn from the corpus, by backend (random baseline
