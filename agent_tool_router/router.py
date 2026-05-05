@@ -30,7 +30,27 @@ _PACKAGE_ROOT = Path(__file__).resolve().parent
 _REPO_ROOT = _PACKAGE_ROOT.parent
 _BUILTIN_MODELS_DIR = _REPO_ROOT / "models"
 
+# Default HuggingFace org for short-name pretrained lookups.
+_HF_DEFAULT_ORG = "dalek-ai"
+
 DEFAULT_ENCODER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def _hf_snapshot_download(repo_id: str) -> Path:
+    """Download a pretrained model from HuggingFace Hub and return the
+    local snapshot path. Raises a clear error if `huggingface_hub` is
+    missing.
+    """
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise ImportError(
+            "Pretrained model not found locally and `huggingface_hub` is "
+            "not installed. Install it with `pip install huggingface_hub`, "
+            "or train the model locally with "
+            "`python -m agent_tool_router.train_descriptions --out models/<name>`."
+        ) from exc
+    return Path(snapshot_download(repo_id=repo_id))
 
 
 @dataclass
@@ -76,27 +96,44 @@ class Router:
 
     @classmethod
     def from_pretrained(cls, name_or_path: str) -> "Router":
-        """Load a model by name (looked up in <repo>/models/<name>/) or by
-        absolute/relative directory path.
+        """Load a model by name or by absolute/relative directory path.
+
+        Lookup order for a short name like ``"baseline-v1-desc-hybrid"``:
+
+        1. ``<repo>/models/<name>/`` (when running from a clone that has
+           trained models locally),
+        2. ``<cwd>/<name>/``,
+        3. ``huggingface.co/dalek-ai/<name>`` (downloaded and cached on
+           first use, requires ``huggingface_hub``).
+
+        For an explicit ``"user/repo"`` argument, an existing local path
+        wins; otherwise the value is treated as a HuggingFace repo id.
+        Absolute paths are always treated as local-only.
 
         Model directories may contain encoder centroids
-        (`encoder_centroids.npy`) and a `config.json` setting the default
-        backend; those are loaded automatically when present. The encoder
-        model itself is lazy-loaded on the first route() call, so import
-        cost is paid only when actually used.
+        (``encoder_centroids.npy``) and a ``config.json`` setting the
+        default backend; those are loaded automatically when present. The
+        encoder model itself is lazy-loaded on the first route() call.
         """
         candidate = Path(name_or_path)
-        if not candidate.is_absolute():
+        if candidate.is_absolute():
+            if not candidate.exists():
+                raise FileNotFoundError(f"No model at {candidate}.")
+        elif "/" in name_or_path:
+            # Treat as path first; fall back to HF repo id.
+            if candidate.exists():
+                pass
+            else:
+                candidate = _hf_snapshot_download(name_or_path)
+        else:
             built_in = _BUILTIN_MODELS_DIR / name_or_path
+            cwd_local = Path.cwd() / name_or_path
             if built_in.exists():
                 candidate = built_in
+            elif cwd_local.exists():
+                candidate = cwd_local
             else:
-                candidate = Path.cwd() / name_or_path
-        if not candidate.exists():
-            raise FileNotFoundError(
-                f"No model at {candidate}. Train one with "
-                f"`python -m agent_tool_router.train --out models/<name>`."
-            )
+                candidate = _hf_snapshot_download(f"{_HF_DEFAULT_ORG}/{name_or_path}")
 
         config_path = candidate / "config.json"
         if config_path.exists():
