@@ -90,6 +90,216 @@
       "en": "change the items in my pending order before it ships",
       "fr": "modifie les articles de ma commande en attente avant qu'elle ne soit expédiée",
       "expected_concepts": ["modify order", "modify items order", "modify pending"]
+    },
+    {
+      "id": "list_files",
+      "en": "list all the files in my downloads folder",
+      "fr": "liste tous les fichiers dans mon dossier de téléchargements",
+      "expected_concepts": ["list directory", "list dir", "files list", "list files"]
+    },
+    {
+      "id": "read_file",
+      "en": "read the contents of the config.json file",
+      "fr": "lis le contenu du fichier config.json",
+      "expected_concepts": ["read file", "read text", "file read"]
+    },
+    {
+      "id": "create_issue",
+      "en": "create a github issue for the login bug",
+      "fr": "crée un ticket github pour le bug de connexion",
+      "expected_concepts": ["create issue", "create ticket"]
+    },
+    {
+      "id": "directions",
+      "en": "give me directions to the nearest airport",
+      "fr": "donne-moi l'itinéraire vers l'aéroport le plus proche",
+      "expected_concepts": ["calculate route", "directions", "navigate route", "driving directions"]
+    },
+    {
+      "id": "generate_image",
+      "en": "generate an image of a cat playing piano",
+      "fr": "génère une image d'un chat qui joue du piano",
+      "expected_concepts": ["generate image", "image generation", "create image"]
+    },
+    {
+      "id": "extract_text_image",
+      "en": "extract the text from this scanned receipt",
+      "fr": "extrais le texte de ce reçu scanné",
+      "expected_concepts": ["extract text", "image text", "ocr"]
+    },
+    {
+      "id": "play_music",
+      "en": "play the latest album by daft punk",
+      "fr": "joue le dernier album de daft punk",
+      "expected_concepts": ["play song", "play music", "play track", "play album"]
+    },
+    {
+      "id": "search_products",
+      "en": "search amazon for waterproof headphones under fifty euros",
+      "fr": "cherche sur amazon des écouteurs étanches à moins de cinquante euros",
+      "expected_concepts": ["search products", "product search", "search amazon"]
+    },
+    {
+      "id": "book_hotel",
+      "en": "book a hotel in lisbon for next weekend",
+      "fr": "réserve un hôtel à lisbonne pour le week-end prochain",
+      "expected_concepts": ["book hotel", "book hotels", "hotel booking", "reserve hotel"]
+    },
+    {
+      "id": "send_sms",
+      "en": "send an SMS to my brother that I am running late",
+      "fr": "envoie un SMS à mon frère pour dire que je suis en retard",
+      "expected_concepts": ["send sms", "sms send"]
+    },
+    {
+      "id": "set_reminder",
+      "en": "set a reminder to call the dentist tomorrow at three pm",
+      "fr": "mets-moi un rappel pour appeler le dentiste demain à quinze heures",
+      "expected_concepts": ["send reminder", "create reminder", "set reminder", "appointment reminder"]
+    },
+    {
+      "id": "sql_query",
+      "en": "run this SQL query against the production database",
+      "fr": "exécute cette requête SQL sur la base de données de production",
+      "expected_concepts": ["execute query", "execute sql", "sql query", "run query"]
+    },
+    {
+      "id": "reset_password",
+      "en": "reset the password for the user alice at example dot com",
+      "fr": "réinitialise le mot de passe de l'utilisateur alice arobase example point com",
+      "expected_concepts": ["password reset", "reset password"]
+    },
+    {
+      "id": "upload_file",
+      "en": "upload this PDF anonymously",
+      "fr": "téléverse ce PDF de manière anonyme",
+      "expected_concepts": ["upload file", "file upload"]
+    },
+    {
+      "id": "delete_file",
+      "en": "delete the temp.log file from my desktop",
+      "fr": "supprime le fichier temp.log de mon bureau",
+      "expected_concepts": ["delete file", "remove file"]
+    },
+    {
+      "id": "authenticate_user",
+      "en": "authenticate the user with their email and password",
+      "fr": "authentifie l'utilisateur avec son email et son mot de passe",
+      "expected_concepts": ["authenticate user", "user authenticate", "user login", "login user"]
+    },
+    {
+      "id": "logout",
+      "en": "log me out of all the connected devices",
+      "fr": "déconnecte-moi de tous les appareils connectés",
+      "expected_concepts": ["logout", "log out", "sign out"]
+    },
+    {
+      "id": "place_order",
+      "en": "place the order for the items currently in my amazon cart",
+      "fr": "passe la commande pour les articles qui sont dans mon panier amazon",
+      "expected_concepts": ["place order", "amazon checkout", "submit order"]
+    },
+    {
+      "id": "track_shipment",
+      "en": "track my package with the tracking number 1Z999",
+      "fr": "suis mon colis avec le numéro de suivi 1Z999",
+      "expected_concepts": ["shipment status", "track shipment", "shipment tracking", "tracking shipment", "track package"]
+    },
+    {
+      "id": "process_refund",
+      "en": "issue a refund for order number 12345",
+      "fr": "émets un remboursement pour la commande numéro 12345",
+      "expected_concepts": ["process refund", "refund order", "issue refund", "refund payment", "request refund"]
+    },
+    {
+      "id": "rent_car",
+      "en": "add a car rental to my paris trip booking",
+      "fr": "ajoute une location de voiture à ma réservation de voyage à paris",
+      "expected_concepts": ["car rental", "rental car", "rent car"]
+    },
+    {
+      "id": "sentiment_analysis",
+      "en": "analyze the sentiment of these customer reviews",
+      "fr": "analyse le sentiment de ces avis clients",
+      "expected_concepts": ["analyze sentiment", "sentiment analysis", "sentiment analyze"]
+    },
+    {
+      "id": "detect_language",
+      "en": "detect what language this email is written in",
+      "fr": "détecte dans quelle langue cet email est écrit",
+      "expected_concepts": ["detect language", "language detection", "identify language"]
+    },
+    {
+      "id": "crypto_price",
+      "en": "get the current price of bitcoin in dollars",
+      "fr": "récupère le cours actuel du bitcoin en dollars",
+      "expected_concepts": ["crypto price", "coin price", "cryptocurrency price", "bitcoin price"]
+    },
+    {
+      "id": "youtube_search",
+      "en": "search youtube for tutorials on rust programming",
+      "fr": "cherche sur youtube des tutoriels sur la programmation rust",
+      "expected_concepts": ["youtube search", "search youtube", "youtube videos"]
+    },
+    {
+      "id": "post_tweet",
+      "en": "post a tweet announcing the new feature launch",
+      "fr": "publie un tweet annonçant le lancement de la nouvelle fonctionnalité",
+      "expected_concepts": ["post tweet", "create tweet", "tweet post"]
+    },
+    {
+      "id": "schedule_meeting",
+      "en": "schedule a recurring meeting every monday at ten am",
+      "fr": "planifie une réunion récurrente tous les lundis à dix heures",
+      "expected_concepts": ["schedule meeting", "create meeting", "book meeting", "recurring meeting"]
+    },
+    {
+      "id": "exchange_rate",
+      "en": "get the exchange rate from US dollar to japanese yen",
+      "fr": "récupère le taux de change du dollar américain vers le yen japonais",
+      "expected_concepts": ["exchange rate", "convert currency", "currency conversion", "currency exchange"]
+    },
+    {
+      "id": "account_balance",
+      "en": "what is the current balance of my checking account",
+      "fr": "quel est le solde actuel de mon compte courant",
+      "expected_concepts": ["account balance", "bank balance", "checking balance", "current balance"]
+    },
+    {
+      "id": "search_restaurants",
+      "en": "find italian restaurants near the eiffel tower",
+      "fr": "trouve des restaurants italiens près de la tour eiffel",
+      "expected_concepts": ["search restaurants", "find restaurants", "restaurants near", "restaurants by"]
+    },
+    {
+      "id": "get_recipe",
+      "en": "give me a recipe for chocolate chip cookies",
+      "fr": "donne-moi une recette de cookies aux pépites de chocolat",
+      "expected_concepts": ["get recipe", "find recipe", "recipe details", "baking recipe"]
+    },
+    {
+      "id": "roll_dice",
+      "en": "roll three six-sided dice",
+      "fr": "lance trois dés à six faces",
+      "expected_concepts": ["roll dice", "dice roll", "roll die"]
+    },
+    {
+      "id": "extract_pdf",
+      "en": "extract all the text from this PDF document",
+      "fr": "extrais tout le texte de ce document PDF",
+      "expected_concepts": ["extract text", "pdf text", "extract pdf"]
+    },
+    {
+      "id": "customer_analysis",
+      "en": "analyze online sales data to find customer preferences",
+      "fr": "analyse les données de vente en ligne pour trouver les préférences clients",
+      "expected_concepts": ["analyze customer", "customer preferences", "customer analysis"]
+    },
+    {
+      "id": "dns_lookup",
+      "en": "look up the DNS records for example.com",
+      "fr": "recherche les enregistrements DNS pour example.com",
+      "expected_concepts": ["dns lookup", "domain dns", "lookup domain", "dns records", "check dns", "dns information"]
     }
   ]
 }
