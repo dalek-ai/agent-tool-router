@@ -1,0 +1,95 @@
+{
+  "_doc": "Parallel EN/FR queries for qualitative encoder evaluation. Each query lists `expected_concepts`: a returned tool name counts as a hit iff its normalized subtokens contain every token of at least one concept (concept matching is order-free, case-insensitive, separator-insensitive). This is more lenient than exact-name match but still requires real semantic overlap (e.g. concept 'cancel order' will not match 'modify_pending_order_items' since 'cancel' is missing).",
+  "queries": [
+    {
+      "id": "cancel_order",
+      "en": "cancel my pending order and refund the credit",
+      "fr": "annule ma commande en attente et rembourse le crédit",
+      "expected_concepts": ["cancel order", "refund order", "cancel pending"]
+    },
+    {
+      "id": "slack_message",
+      "en": "send a message to my team on slack saying the build is broken",
+      "fr": "envoie un message à mon équipe sur slack pour dire que le build est cassé",
+      "expected_concepts": ["slack message", "slack post", "slack send", "post slack", "slack notification"]
+    },
+    {
+      "id": "weather_forecast",
+      "en": "what is the weather forecast in Paris tomorrow",
+      "fr": "quelle est la météo à Paris demain",
+      "expected_concepts": ["weather forecast", "weather", "forecast weather"]
+    },
+    {
+      "id": "transcribe_audio",
+      "en": "transcribe this audio recording into text",
+      "fr": "transcris cet enregistrement audio en texte",
+      "expected_concepts": ["transcribe audio", "transcribe", "audio transcription"]
+    },
+    {
+      "id": "translate_text",
+      "en": "translate this text from english to french",
+      "fr": "traduis ce texte de l'anglais vers le français",
+      "expected_concepts": ["translate text", "translate", "translation"]
+    },
+    {
+      "id": "summarize_doc",
+      "en": "give me a short summary of this 50 page document",
+      "fr": "fais-moi un résumé court de ce document de 50 pages",
+      "expected_concepts": ["summarize document", "summarize", "summary document"]
+    },
+    {
+      "id": "search_flights",
+      "en": "find me cheap flights from Paris to New York next month",
+      "fr": "trouve-moi des vols pas chers de Paris à New York le mois prochain",
+      "expected_concepts": ["search flights", "search flight", "find flights", "flights search"]
+    },
+    {
+      "id": "send_email",
+      "en": "send an email to john about the meeting tomorrow",
+      "fr": "envoie un email à jean au sujet de la réunion de demain",
+      "expected_concepts": ["send email", "email send", "compose email"]
+    },
+    {
+      "id": "calendar_event",
+      "en": "create a calendar event for the project review on monday",
+      "fr": "crée un événement de calendrier pour la revue de projet lundi",
+      "expected_concepts": ["calendar event", "create event", "schedule event", "schedule meeting"]
+    },
+    {
+      "id": "stock_price",
+      "en": "get the current stock price for Apple and Tesla",
+      "fr": "récupère le cours de l'action Apple et Tesla",
+      "expected_concepts": ["stock price", "stock", "stocks", "share price"]
+    },
+    {
+      "id": "exchange_order",
+      "en": "exchange the items I received yesterday for a different size",
+      "fr": "échange les articles que j'ai reçus hier pour une autre taille",
+      "expected_concepts": ["exchange order", "return order", "exchange items", "return items"]
+    },
+    {
+      "id": "find_user",
+      "en": "look up the user by their email address",
+      "fr": "retrouve l'utilisateur à partir de son adresse email",
+      "expected_concepts": ["find user", "user email", "get user", "lookup user"]
+    },
+    {
+      "id": "calculate",
+      "en": "calculate the total with 20 percent tax",
+      "fr": "calcule le total avec 20 pourcent de taxe",
+      "expected_concepts": ["calculate tax", "calculate total", "tax calculate"]
+    },
+    {
+      "id": "convert_audio",
+      "en": "convert this mp3 file to wav format",
+      "fr": "convertis ce fichier mp3 au format wav",
+      "expected_concepts": ["convert audio", "audio convert", "audio format"]
+    },
+    {
+      "id": "modify_order",
+      "en": "change the items in my pending order before it ships",
+      "fr": "modifie les articles de ma commande en attente avant qu'elle ne soit expédiée",
+      "expected_concepts": ["modify order", "modify items order", "modify pending"]
+    }
+  ]
+}

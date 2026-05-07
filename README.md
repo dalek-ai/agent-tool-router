@@ -208,6 +208,12 @@ and caches locally. Three pretrained models are published:
   centroids scored as `0.5 * cos_tfidf + 0.5 * cos_encoder`. ~35 MB.
   Requires `pip install agent-tool-router[encoder]` at runtime
   (sentence-transformers + torch).
+- **`baseline-v1-desc-hybrid-multilingual`** — same hybrid pipeline, but the
+  encoder is `paraphrase-multilingual-MiniLM-L12-v2` (50+ languages). On a
+  parallel EN/FR probe (n=15 hand-written queries), FR top-3 jumps from 27%
+  (default) to 67% with EN top-3 unchanged at 80%. On the full English LOSO
+  refit benchmark it trails the default by ~3.9pp weighted overall, so use
+  the default if all your queries are English. ~80 MB.
 
 ```python
 from agent_tool_router import Router
@@ -291,6 +297,16 @@ top-3: Hermes 72.3% → 75.0% (+2.7pp), tau-bench 11.1% → 14.3% (+3.2pp),
 ToolACE 58.7% → 54.2% (-4.5pp). Weighted overall by n_calls drops 1.3pp.
 MiniLM-L6 stays the default; pass `--encoder-model BAAI/bge-small-en-v1.5`
 to the train script if Hermes/tau-bench is your weight class.
+
+A multilingual encoder (`paraphrase-multilingual-MiniLM-L12-v2`, 117M
+params) was also tested. On a 15-query parallel EN/FR probe, top-3
+accuracy goes from 80%/27% (default MiniLM-L6, EN/FR) to 80%/67% — same
+EN coverage, +40pp on FR. On the full English LOSO refit, the multilingual
+encoder costs Hermes -8.8pp, ToolACE -3.9pp and tau-bench -1.5pp on top-3
+(weighted overall -3.9pp). Shipped as `baseline-v1-desc-hybrid-multilingual`
+for users whose queries are not all in English. Reproduce:
+`python -m router.eval.eval_fr_encoder` and
+`python -m router.eval.eval_v1_desc_loso_hybrid --encoder-model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
 
 Per-task min-max / z-score / rank normalization of `cos_tfidf` and
 `cos_enc` before the linear combo was also tested (`router/eval/eval_v1_desc_loso_calibration.py`).

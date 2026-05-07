@@ -25,6 +25,7 @@ DEFAULT_MODELS = [
     "baseline-v0",
     "baseline-v1-desc",
     "baseline-v1-desc-hybrid",
+    "baseline-v1-desc-hybrid-multilingual",
 ]
 
 ORG = "dalek-ai"
@@ -48,6 +49,17 @@ MODEL_CARDS = {
         "MiniLM-L6-v2). ~35 MB. Top-3 overall = 49.1% on a held-out 30 "
         "425-call split, Pareto-dominates both solo backends. Requires "
         "``pip install agent-tool-router[encoder]`` for inference. See "
+        "https://github.com/dalek-ai/agent-tool-router."
+    ),
+    "baseline-v1-desc-hybrid-multilingual": (
+        "Same hybrid pipeline as ``baseline-v1-desc-hybrid``, but the "
+        "encoder is ``paraphrase-multilingual-MiniLM-L12-v2`` (50+ "
+        "languages). On a 15-query parallel EN/FR probe, FR top-3 jumps "
+        "from 27% (default English-only encoder) to 67%, while EN top-3 "
+        "stays at 80%. On the full LOSO refit benchmark (English) it is "
+        "~3.9pp behind the default model overall, so prefer the default "
+        "if your queries are all in English. Requires ``pip install "
+        "agent-tool-router[encoder]``. See "
         "https://github.com/dalek-ai/agent-tool-router."
     ),
 }
