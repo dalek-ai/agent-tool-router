@@ -4,8 +4,10 @@ works zero-friction for users who clone the repo.
 
 Usage:
     export HF_TOKEN=hf_...
-    python scripts/push_pretrained.py            # push all 3 default models
-    python scripts/push_pretrained.py baseline-v1-desc-hybrid  # one only
+    python scripts/push_pretrained.py                       # push all 4 models (full upload)
+    python scripts/push_pretrained.py baseline-v1-desc      # push one only
+    python scripts/push_pretrained.py --card-only           # update READMEs only
+    python scripts/push_pretrained.py --card-only -- baseline-v1-desc-hybrid
 
 Each model is pushed as its own repo: ``dalek-ai/<name>``. Repos are
 created if missing. Existing files are overwritten.
@@ -16,6 +18,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -30,42 +33,262 @@ DEFAULT_MODELS = [
 
 ORG = "dalek-ai"
 
-MODEL_CARDS = {
-    "baseline-v0": (
-        "Centroid retrieval router over 265 tool names from public agent "
-        "benchmarks (tau-bench, Hermes, ToolACE). TF-IDF only, ~1 MB. "
-        "Smallest of the three pretrained baselines. See "
-        "https://github.com/dalek-ai/agent-tool-router for details."
-    ),
-    "baseline-v1-desc": (
-        "Centroid retrieval router over 18 671 tools, scored by cosine on "
-        "natural-language descriptions. TF-IDF only, ~6 MB, no extra "
-        "dependencies. Top-3 overall = 41.2% on a held-out 30 425-call "
-        "split. See https://github.com/dalek-ai/agent-tool-router."
-    ),
-    "baseline-v1-desc-hybrid": (
-        "Centroid retrieval router over 18 671 tools, hybrid scoring "
-        "``0.5 * cos_tfidf + 0.5 * cos_encoder`` (sentence-transformers "
-        "MiniLM-L6-v2). ~35 MB. Top-3 overall = 49.1% on a held-out 30 "
-        "425-call split, Pareto-dominates both solo backends. Requires "
-        "``pip install agent-tool-router[encoder]`` for inference. See "
-        "https://github.com/dalek-ai/agent-tool-router."
-    ),
-    "baseline-v1-desc-hybrid-multilingual": (
-        "Same hybrid pipeline as ``baseline-v1-desc-hybrid``, but the "
-        "encoder is ``paraphrase-multilingual-MiniLM-L12-v2`` (50+ "
-        "languages). On a 15-query parallel EN/FR probe, FR top-3 jumps "
-        "from 27% (default English-only encoder) to 67%, while EN top-3 "
-        "stays at 80%. On the full LOSO refit benchmark (English) it is "
-        "~3.9pp behind the default model overall, so prefer the default "
-        "if your queries are all in English. Requires ``pip install "
-        "agent-tool-router[encoder]``. See "
-        "https://github.com/dalek-ai/agent-tool-router."
-    ),
+# YAML frontmatter that pushes us into the right HF discovery surfaces:
+#   pipeline_tag: sentence-similarity   (cosine retrieval)
+#   tags: agents / tool-routing / function-calling / retrieval / mcp
+#   language: en (or [en, fr] for multilingual)
+# The body uses fenced code blocks so HF renders the snippets cleanly.
+_FRONTMATTER_EN = """\
+---
+library_name: agent-tool-router
+license: mit
+pipeline_tag: sentence-similarity
+language:
+  - en
+tags:
+  - agents
+  - tool-routing
+  - function-calling
+  - retrieval
+  - mcp
+---
+"""
+
+_FRONTMATTER_MULTI = """\
+---
+library_name: agent-tool-router
+license: mit
+pipeline_tag: sentence-similarity
+language:
+  - en
+  - fr
+  - multilingual
+tags:
+  - agents
+  - tool-routing
+  - function-calling
+  - retrieval
+  - mcp
+  - multilingual
+  - french
+---
+"""
+
+_INSTALL_NOTE = (
+    "Install the SDK directly from GitHub (PyPI publish pending):\n"
+    "```bash\n"
+    "pip install git+https://github.com/dalek-ai/agent-tool-router.git\n"
+    "```\n"
+)
+
+_DEMO_LINK = (
+    "Live demo: [dalek-ai/agent-tool-router-demo](https://huggingface.co/spaces/dalek-ai/agent-tool-router-demo) "
+    "(gradio Space, FR/EN)."
+)
+
+
+def card_baseline_v0() -> str:
+    return _FRONTMATTER_EN + f"""
+# baseline-v0
+
+Centroid retrieval router over **265 tool names** from public agent
+benchmarks (tau-bench, Hermes, ToolACE). TF-IDF only, no torch, no GPU,
+no API key. Smallest of the four pretrained baselines.
+
+## Quick start
+
+{_INSTALL_NOTE}
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v0")
+r.route("cancel my pending order and refund the credit", k=3)
+```
+
+`Router.from_pretrained("<name>")` resolves the bare name to
+`dalek-ai/<name>` on HuggingFace Hub and caches locally on first call.
+
+## Numbers
+
+Cross-corpus, held-out 2 041 tasks, vocab = 265 tools (≥ 3 occurrences):
+
+| metric | model | random | ratio |
+|---|---:|---:|---:|
+| top-1 | 33.0% | 0.38% | 87.5× |
+| top-3 | 63.8% | 1.13% | 56.4× |
+| top-5 | 83.0% | 1.89% | 44.0× |
+
+For the long-tail catalog (18 671 tools) prefer
+[`baseline-v1-desc`](https://huggingface.co/dalek-ai/baseline-v1-desc) or
+[`baseline-v1-desc-hybrid`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid).
+
+## Repo & demo
+
+[github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
+{_DEMO_LINK}
+"""
+
+
+def card_baseline_v1_desc() -> str:
+    return _FRONTMATTER_EN + f"""
+# baseline-v1-desc
+
+Centroid retrieval router over **18 671 tools**, scored by
+`cosine(task_tfidf, description_tfidf)`. TF-IDF only, ~6 MB, no torch,
+no GPU. The default model behind `pip install agent-tool-router`.
+
+## Quick start
+
+{_INSTALL_NOTE}
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v1-desc")
+r.route("cancel my pending order and refund the credit", k=3)
+# ['refundOrder', 'modify_pending_order_items', 'cancel_pending_order']
+```
+
+## Numbers
+
+Per-call top-3 against the full 18 671-tool catalog (n=30 425 calls,
+held-out across the corpus). Random baseline = 3/V = 0.016%:
+
+| source | n calls | top-3 |
+|---|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 74.3% |
+| ToolACE | 17 169 | 52.4% |
+| tau-bench | 8 880 | 3.2% |
+| **overall** | **30 425** | **41.2%** |
+
+For Pareto-better top-3 across all three sources at the cost of ~250 MB
+of `torch + sentence-transformers`, switch to
+[`baseline-v1-desc-hybrid`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid).
+
+## Repo & demo
+
+[github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
+{_DEMO_LINK}
+"""
+
+
+def card_baseline_v1_desc_hybrid() -> str:
+    return _FRONTMATTER_EN + f"""
+# baseline-v1-desc-hybrid
+
+Centroid retrieval router over **18 671 tools**, hybrid scoring:
+
+```
+score = 0.5 · cosine(task_tfidf, desc_tfidf) + 0.5 · cosine(task_enc, desc_enc)
+```
+
+Encoder = `sentence-transformers/all-MiniLM-L6-v2` (22M params,
+English). Encoder is lazy-loaded on the first `route()` call. ~35 MB
+of centroids on disk.
+
+## Quick start
+
+{_INSTALL_NOTE}
+```bash
+pip install "agent-tool-router[encoder] @ git+https://github.com/dalek-ai/agent-tool-router.git"
+```
+
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v1-desc-hybrid")
+r.route("cancel my order and refund the credit", k=3)
+# ['cancel_pending_order', 'cancel_order', 'refundOrder']
+```
+
+## Numbers
+
+Per-call top-3 against the full 18 671-tool catalog (n=30 425 calls):
+
+| source | n calls | tfidf | encoder | **hybrid α=0.5** |
+|---|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 74.3% | 60.7% | **74.9%** |
+| ToolACE | 17 169 | 52.4% | 54.8% | **62.8%** |
+| tau-bench | 8 880 | 3.2% | 6.1% | **9.9%** |
+| **overall** | **30 425** | 41.2% | 41.4% | **49.1%** |
+
+The hybrid Pareto-dominates both solo backends on every source and every
+top-k (+7.9pp overall vs TF-IDF). LOSO refit (TF-IDF retrained per
+held-out source, encoder pretrained) loses at most -4.1pp vs the
+in-distribution number above.
+
+For routing on French / non-English tasks, see
+[`baseline-v1-desc-hybrid-multilingual`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid-multilingual).
+
+## Repo & demo
+
+[github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
+{_DEMO_LINK}
+"""
+
+
+def card_baseline_v1_desc_hybrid_multilingual() -> str:
+    return _FRONTMATTER_MULTI + f"""
+# baseline-v1-desc-hybrid-multilingual
+
+Same hybrid pipeline as
+[`baseline-v1-desc-hybrid`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid),
+but the encoder is `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+(117M params, 50+ languages). ~80 MB of centroids on disk. Built for
+agents that receive tasks in French or any of the 50+ languages
+supported by the encoder.
+
+**En français :** ce modèle route une tâche écrite en français vers les
+bons outils parmi un catalogue de 18 671 outils anglophones (les
+descriptions des outils restent en anglais, l'encoder multilingue
+aligne les deux espaces).
+
+## Quick start
+
+{_INSTALL_NOTE}
+```bash
+pip install "agent-tool-router[encoder] @ git+https://github.com/dalek-ai/agent-tool-router.git"
+```
+
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v1-desc-hybrid-multilingual")
+r.route("envoie un message slack à l'équipe data", k=3)
+# ['post_message_to_slack', 'sendSlackMessage', ...]
+r.route("traduis ce document en anglais", k=3)
+```
+
+## Numbers
+
+**Parallel EN/FR probe (n=50 hand-written queries against the full
+18 671-tool catalog, top-3 per call):**
+
+| model | EN top-3 | FR top-3 | EN top-5 | FR top-5 |
+|---|---:|---:|---:|---:|
+| baseline-v1-desc-hybrid (default English encoder) | 82% | 26% | 90% | 30% |
+| **baseline-v1-desc-hybrid-multilingual** | **82%** | **54%** | 90% | 62% |
+
+**+28pp top-3 on French queries with no measurable cost on English
+top-3** at this panel size. Reproduce:
+`python -m router.eval.eval_fr_pretrained`.
+
+**English-only benchmark (LOSO refit, full catalog, top-3):** the
+multilingual encoder trails the default English-only encoder by ~3.9pp
+weighted overall (Hermes -8.8pp, ToolACE -3.9pp, tau-bench -1.5pp).
+Prefer the default model if all your queries are English.
+
+## Repo & demo
+
+[github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
+{_DEMO_LINK}
+"""
+
+
+CARDS = {
+    "baseline-v0": card_baseline_v0,
+    "baseline-v1-desc": card_baseline_v1_desc,
+    "baseline-v1-desc-hybrid": card_baseline_v1_desc_hybrid,
+    "baseline-v1-desc-hybrid-multilingual": card_baseline_v1_desc_hybrid_multilingual,
 }
 
 
-def push_one(name: str, token: str) -> None:
+def push_full(name: str, token: str) -> None:
     from huggingface_hub import HfApi, create_repo
 
     local = MODELS_DIR / name
@@ -76,12 +299,10 @@ def push_one(name: str, token: str) -> None:
     print(f"creating repo {repo_id} (idempotent)...")
     create_repo(repo_id=repo_id, token=token, exist_ok=True, repo_type="model")
 
-    card = MODEL_CARDS.get(name, f"agent-tool-router pretrained: {name}")
-    readme = local / "README.md"
-    readme.write_text(
-        f"---\nlibrary_name: agent-tool-router\nlicense: mit\n---\n\n# {name}\n\n{card}\n",
-        encoding="utf-8",
-    )
+    card_fn = CARDS.get(name)
+    if card_fn is None:
+        sys.exit(f"error: no card defined for {name}")
+    (local / "README.md").write_text(card_fn(), encoding="utf-8")
 
     api = HfApi(token=token)
     print(f"uploading {local} -> {repo_id} ...")
@@ -94,12 +315,46 @@ def push_one(name: str, token: str) -> None:
     print(f"  -> https://huggingface.co/{repo_id}")
 
 
+def push_card_only(name: str, token: str) -> None:
+    from huggingface_hub import HfApi, create_repo
+
+    repo_id = f"{ORG}/{name}"
+    print(f"refreshing card for {repo_id} ...")
+    create_repo(repo_id=repo_id, token=token, exist_ok=True, repo_type="model")
+
+    card_fn = CARDS.get(name)
+    if card_fn is None:
+        sys.exit(f"error: no card defined for {name}")
+
+    api = HfApi(token=token)
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".md", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(card_fn())
+        tmp_path = f.name
+
+    api.upload_file(
+        path_or_fileobj=tmp_path,
+        path_in_repo="README.md",
+        repo_id=repo_id,
+        repo_type="model",
+        commit_message="docs: refresh model card",
+    )
+    os.unlink(tmp_path)
+    print(f"  -> https://huggingface.co/{repo_id}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "names",
         nargs="*",
-        help="Model names to push (default: all three baselines).",
+        help="Model names to push (default: all four baselines).",
+    )
+    parser.add_argument(
+        "--card-only",
+        action="store_true",
+        help="Only update README.md (no model artifact upload).",
     )
     args = parser.parse_args()
 
@@ -111,7 +366,10 @@ def main():
 
     names = args.names if args.names else DEFAULT_MODELS
     for n in names:
-        push_one(n, token)
+        if args.card_only:
+            push_card_only(n, token)
+        else:
+            push_full(n, token)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+gradio>=4.44
+agent-tool-router[encoder] @ git+https://github.com/dalek-ai/agent-tool-router.git@main
