@@ -13,6 +13,8 @@ r.route("cancel my pending order and refund the credit", k=3)
 
 Install: `pip install agent-tool-router`. No GPU, no torch, no API key.
 
+**En français :** ce router open-source choisit les outils à appeler pour une tâche, parmi un catalogue de 18 000. Le pretrained multilingue sort 54% top-3 sur un panel de 50 tâches en français (`baseline-v1-desc-hybrid-multilingual`), sans coût mesurable côté anglais. Tout est téléchargeable depuis [huggingface.co/dalek-ai](https://huggingface.co/dalek-ai), licence MIT.
+
 ## What this is
 
 Most agent stacks today wire up a fixed bag of tools and let the LLM figure out
