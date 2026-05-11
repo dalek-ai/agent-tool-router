@@ -14,6 +14,7 @@ tags:
   - tool-routing
   - function-calling
   - retrieval
+  - sentence-similarity
   - multilingual
   - french
 ---
@@ -33,4 +34,7 @@ Two pretrained models are loaded:
 
 Code, dataset rebuild script and full numbers:
 [github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router).
-Models: [huggingface.co/dalek-ai](https://huggingface.co/dalek-ai). MIT.
+Models: [huggingface.co/dalek-ai](https://huggingface.co/dalek-ai).
+Parallel EN/FR eval queries (n=50):
+[dalek-ai/agent-tool-router-eval-fr](https://huggingface.co/datasets/dalek-ai/agent-tool-router-eval-fr).
+MIT.
