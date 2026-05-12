@@ -144,45 +144,49 @@ what was already called.
 We mined 10 480 `(query, history, next_tool)` triplets from the 7 184
 multi-turn traces in the dataset (ToolACE + Hermes + tau-bench, after
 collapsing consecutive duplicates) and ran a Markov-1 rerank on top of
-the shipped retrieval (`top-50` candidates, rerank by
+the shipped retrieval (top-K candidates, rerank by
 `α · retrieval + (1-α) · P(next | last_history_tool)`, 80/20 split by
-trace_id, add-one smoothing).
+trace_id, add-one smoothing, Markov-1 fit on train only).
 
-| Setup                        | top-1 | top-3 | top-5 | top-10 |
-|---                           |---:|---:|---:|---:|
-| Retrieval-only (α=1.0)       | 13.8% | 32.7% | 38.8% | 45.4% |
-| **Markov-1 rerank (α=0.4)**  | **34.6%** | **48.0%** | **50.5%** | **53.6%** |
+| Setup                                         | top-1 | top-3 | top-5 | top-10 |
+|---                                            |---:|---:|---:|---:|
+| Retrieval-only                                | 13.8% | 32.7% | 38.8% | 45.4% |
+| Markov-1 rerank top-50 (α=0.4)                | 34.6% | 48.0% | 50.5% | 53.6% |
+| **Markov-1 rerank top-200 (α=0.1)** ⬅ default | **39.0%** | **54.9%** | **57.7%** | **60.6%** |
 
-That is **+15.3pp top-3** on the test set (n=2094) from a one-line prior.
-Stratified by position, the gap is largest deep in the trajectory: on
-Hermes at t≥3 the rerank pulls top-3 from ~31% to **100%**; on tau-bench
-at t=1 it goes 7.0% → 37.0%. The history carries signal that the query
-does not, and a learned prior on top-50 retrieval is enough to surface
-it.
+That is **+22.2pp top-3** over retrieval, and **+6.7pp** over the top-50
+rerank baseline, from widening the retrieval bucket without any new
+training. Stratified by position, the gap is largest deep in the
+trajectory: on Hermes at t≥3 the rerank pulls top-3 from ~31% to 100%;
+on tau-bench at t=1 it goes 7.0% → 57.7%.
+
+Retrieval recall@K is the mechanical ceiling on any rerank that lives on
+top-K candidates: recall@50 = 58.9%, recall@200 = 69.6%. Markov-1 reaches
+~99% of that ceiling at both bucket sizes — the rerank is essentially
+optimal, the bottleneck is whether the gold tool is in the candidate set
+at all.
 
 Reproduce:
 ```
 python router/eval/build_next_tool_dataset.py
-python router/eval/eval_next_tool_baseline.py
-python router/eval/eval_next_tool_markov.py
+python router/eval/build_next_tool_cache.py
+python router/eval/eval_next_tool_markov.py     # K=50 sweep
+python router/eval/eval_next_tool_widen.py      # K=50/100/150/200 sweep
 ```
 
-Markov-1 was meant as the floor. The actual ceiling on this setup is the
-retrieval recall: with `top-50` candidates, the gold is reachable in
-58.9% of the held-out triplets, and Markov-1 already hits 58.7%. A small
-learned MLP rerank (concat of query / prev-tool / candidate MiniLM
-embeddings + retrieval score, 1 hidden layer of 128, trained on 5K
-positives) was tested in `router/eval/train_next_tool_mlp.py` and
-`eval_next_tool_mlp.py`. It lifts top-3 from retrieval 32.7% to 40.3%
-(+7.6pp), but loses -18.4pp top-3 versus Markov-1 — the counts-based
+A small learned MLP rerank (concat of query / prev-tool / candidate
+MiniLM embeddings + retrieval score, 1 hidden 128, trained on 5K
+positives) was also tested in `router/eval/train_next_tool_mlp.py` and
+`eval_next_tool_mlp.py`. On top-50, it lifts top-3 from retrieval 32.7%
+to 40.3% (+7.6pp), but loses -7.7pp versus Markov-1 — the counts-based
 transition prior is hard to outscore with dense features on this much
-training data. The next way to actually move the ceiling is to widen
-retrieval (top-100/200) or train a retriever directly on the next-tool
-objective, not to keep stacking reranks on top-50.
+training data. To actually move past the retrieval-recall ceiling, train
+the retriever directly on the next-tool objective rather than stacking
+more reranks on top-K.
 
-The rerank ships with `baseline-v1-desc-hybrid` (≥ 0.2.0). Pass the
-tool names already called in the trace as `history=` and the top-50
-candidates are reranked with the Markov-1 prior at α=0.4 (the sweep-best
+The rerank ships with `baseline-v1-desc-hybrid` (≥ 0.3.0). Pass the
+tool names already called in the trace as `history=` and the top-200
+candidates are reranked with the Markov-1 prior at α=0.1 (the sweep-best
 on the held-out test):
 
 ```python
@@ -429,13 +433,15 @@ The interesting questions are downstream:
    to it from its description alone? This is the actual hard problem and where
    most of the dataset (95% singleton long-tail) is currently dead weight.
 2. **Sequence routing.** History-aware Markov-1 rerank shipped in
-   `baseline-v1-desc-hybrid` ≥ 0.2.0: top-3 next-tool accuracy 32.7% →
-   48.0% on a held-out test set, and 58.7% on the subset where the gold
-   is reachable in the top-50. A learned MLP rerank was tested and
-   archived (loses to Markov-1 by 18pp top-3, the dense features can't
-   recover counts-based transition mass). To actually push past 58.7%
-   the retrieval itself has to improve — wider top-N, or training the
-   retriever on the next-tool objective.
+   `baseline-v1-desc-hybrid` ≥ 0.3.0: top-3 next-tool accuracy 32.7% →
+   54.9% on a held-out test set (n=2094), ~99% of the recall@200
+   ceiling. Widening the retrieval bucket from 50 → 200 lifted top-3 by
+   +6.7pp over the v0.2.0 default at zero additional training cost. A
+   learned MLP rerank was tested and archived (loses to Markov-1 by
+   ~8pp top-3 on top-50; counts dominate dense features at this data
+   scale). Past 54.9% requires improving the retriever itself — wider
+   top-N has diminishing returns, training a retriever directly on the
+   next-tool objective is the next lever.
 3. **Cross-source generalization.** Names don't transfer (LOSO ≈ 0%);
    descriptions do (LOSO ≈ 35–74% top-3 on the two held-out sources with
    broad catalogs; see Caveats). Next step: make `Router` first-class on

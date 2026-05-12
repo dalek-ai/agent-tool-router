@@ -33,7 +33,8 @@ ROOT = Path(__file__).resolve().parents[2]
 TRIPLETS = ROOT / "data" / "next_tool_triplets.jsonl"
 CACHE_DIR = ROOT / "data" / "cache" / "next_tool"
 MODEL = "baseline-v1-desc-hybrid"
-TOP_N = 50
+TOP_N = 200  # widened for N63 retrieval-bucket sweep; downstream eval scripts
+             # slice [:50] when reproducing earlier numbers
 BATCH = 256
 
 

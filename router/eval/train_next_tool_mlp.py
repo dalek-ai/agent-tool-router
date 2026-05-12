@@ -6,8 +6,10 @@ Negatives are sampled from the same top-50 retrieval list as the gold
 positive; if the gold isn't in top-50, the triplet is skipped at training
 time (it would be unrankable anyway).
 
-Output: `models/baseline-v1-desc-hybrid/mlp_rerank.npz` — numpy-only weights
-so the rerank can run at inference without torch.
+Output: `models/_archive/mlp_rerank_baseline_v1_desc_hybrid.npz` — numpy
+weights only (no torch at inference). Kept out of the published model
+directory so it doesn't ship to HF Hub: the MLP didn't beat Markov-1 in
+the head-to-head, this is a reproducibility artifact only.
 
 Same split as `eval_next_tool_markov.py`: trace_id 80/20, seed=17.
 """
@@ -27,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TRIPLETS = ROOT / "data" / "next_tool_triplets.jsonl"
 CACHE = ROOT / "data" / "cache" / "next_tool"
 ENC_CENTROIDS = ROOT / "models" / "baseline-v1-desc-hybrid" / "encoder_centroids.npy"
-OUT = ROOT / "models" / "baseline-v1-desc-hybrid" / "mlp_rerank.npz"
+OUT = ROOT / "models" / "_archive" / "mlp_rerank_baseline_v1_desc_hybrid.npz"
 
 SEED = 17
 HIDDEN = 128

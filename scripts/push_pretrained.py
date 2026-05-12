@@ -197,11 +197,11 @@ r.route("cancel my order and refund the credit", k=3)
 # ['cancel_pending_order', 'cancel_order', 'refundOrder']
 ```
 
-## History-aware rerank (≥ 0.2.0)
+## History-aware rerank (≥ 0.3.0)
 
 The model ships a Markov-1 transition table (~21 KB) trained on the
 same 7 184 multi-turn traces. Pass the tool names already called in
-the trace as `history=` and the top-50 retrieval candidates are
+the trace as `history=` and the top-200 retrieval candidates are
 reranked with a learned prior:
 
 ```python
@@ -213,15 +213,23 @@ r.route(
 # ['update_reservation_baggages', 'update_reservation_passengers', 'cancel_reservation']
 ```
 
-Measured lift on n=2094 held-out triplets (split by trace_id, α=0.4):
+Measured lift on n=2094 held-out triplets (split by trace_id, train-only
+Markov to avoid prior-on-test leakage; alpha sweep-best per bucket):
 
-| Setup                       | top-1 | top-3 | top-5 |
-|---                          |---:|---:|---:|
-| Retrieval-only              | 13.8% | 32.7% | 38.8% |
-| **Markov-1 rerank (α=0.4)** | **34.6%** | **48.0%** | **50.5%** |
+| Setup                                  | top-1 | top-3 | top-5 |
+|---                                     |---:|---:|---:|
+| Retrieval-only                         | 13.8% | 32.7% | 38.8% |
+| Markov-1 rerank top-50 (α=0.4)         | 34.6% | 48.0% | 50.5% |
+| **Markov-1 rerank top-200 (α=0.1)** ⬅ default ≥ 0.3.0 | **39.0%** | **54.9%** | **57.7%** |
+
+Widening the retrieval bucket from 50 → 200 lifts top-3 by +6.7pp without
+any new training: same prior, more candidates available to rerank.
+Retrieval recall@K is the mechanical ceiling: recall@50 = 58.9%,
+recall@200 = 69.6% on this test split.
 
 No-op when `history` is omitted or empty. Override with
-`markov_alpha=0.0` (prior-only) or `1.0` (retrieval-only).
+`markov_alpha=0.0` (prior-only) or `1.0` (retrieval-only), and the bucket
+width via `markov_rerank_n` (default 200).
 
 ## Numbers
 

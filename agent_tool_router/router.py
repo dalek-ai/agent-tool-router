@@ -73,8 +73,8 @@ class Router:
         backend: str = "tfidf",
         markov_counts: Optional["sp.csr_matrix"] = None,
         markov_vocab: Optional[list[str]] = None,
-        markov_alpha: float = 0.4,
-        markov_rerank_n: int = 50,
+        markov_alpha: float = 0.1,
+        markov_rerank_n: int = 200,
     ):
         if vocab is None:
             raise ValueError("Router requires a vocab list.")
@@ -163,8 +163,8 @@ class Router:
         backend = cfg.get("backend", "tfidf")
         alpha = float(cfg.get("alpha", 0.5))
         encoder_model_name = cfg.get("encoder_model_name")
-        markov_alpha = float(cfg.get("markov_alpha", 0.4))
-        markov_rerank_n = int(cfg.get("markov_rerank_n", 50))
+        markov_alpha = float(cfg.get("markov_alpha", 0.1))
+        markov_rerank_n = int(cfg.get("markov_rerank_n", 200))
 
         vec = None
         centroids = None

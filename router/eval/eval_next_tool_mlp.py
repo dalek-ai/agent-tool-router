@@ -26,7 +26,7 @@ HYBRID_DIR = ROOT / "models" / "baseline-v1-desc-hybrid"
 ENC_CENTROIDS = HYBRID_DIR / "encoder_centroids.npy"
 MARKOV_NPZ = HYBRID_DIR / "markov_counts.npz"
 MARKOV_VOCAB = HYBRID_DIR / "markov_vocab.txt"
-MLP_NPZ = HYBRID_DIR / "mlp_rerank.npz"
+MLP_NPZ = ROOT / "models" / "_archive" / "mlp_rerank_baseline_v1_desc_hybrid.npz"
 
 SEED = 17
 KS = (1, 3, 5, 10)
@@ -68,32 +68,42 @@ def mlp_score(X: np.ndarray, w) -> np.ndarray:
     return (h @ w["W2"].T + w["b2"]).reshape(-1)
 
 
-def load_markov():
-    """Same loader pattern as `Router.from_pretrained` for the markov table."""
-    import scipy.sparse as sp
+def build_markov_train(train_triplets):
+    """Train-only Markov-1, identical to `eval_next_tool_widen.build_markov_train`.
 
-    counts = sp.load_npz(MARKOV_NPZ).tocsr()
-    vocab = MARKOV_VOCAB.read_text().splitlines()
-    name_to_mk_idx = {n: i for i, n in enumerate(vocab)}
-    totals = np.asarray(counts.sum(axis=1)).reshape(-1)
-    V = counts.shape[0]
-    return counts, totals, V, name_to_mk_idx
+    The shipped `markov_counts.npz` is built from the full dataset
+    (no split — that's intentional for users), but evaluating against
+    the same triplets used to fit it would leak. So we rebuild here
+    from the 80% train slice and keep the eval honest.
+    """
+    from collections import defaultdict as dd
+
+    counts = dd(lambda: dd(int))
+    totals = dd(int)
+    vocab = set()
+    for t in train_triplets:
+        if not t["history"]:
+            continue
+        prev = normalize(t["history"][-1])
+        nxt = normalize(t["next_tool"])
+        counts[prev][nxt] += 1
+        totals[prev] += 1
+        vocab.add(prev)
+        vocab.add(nxt)
+    V = len(vocab)
+    return counts, totals, V
 
 
-def markov_score_row(counts, totals, V, name_to_mk, prev_name: str, cand_names: list[str]):
+def markov_score_row(counts, totals, V, prev_name: str, cand_names: list[str]):
     """add-one smoothed P(cand | prev) for a list of candidates."""
-    prev_idx = name_to_mk.get(prev_name)
     out = np.empty(len(cand_names), dtype=np.float32)
-    if prev_idx is None or totals[prev_idx] == 0:
+    if prev_name not in totals:
         out[:] = 1.0 / max(V, 1)
         return out
-    row = counts.getrow(prev_idx)
-    row_dense = np.asarray(row.todense()).reshape(-1)
-    denom = totals[prev_idx] + V
+    denom = totals[prev_name] + V
+    row = counts[prev_name]
     for j, cn in enumerate(cand_names):
-        ci = name_to_mk.get(cn)
-        c = row_dense[ci] if ci is not None else 0
-        out[j] = (c + 1.0) / denom
+        out[j] = (row.get(cn, 0) + 1.0) / denom
     return out
 
 
@@ -168,21 +178,22 @@ def main() -> None:
     router = Router.from_pretrained("baseline-v1-desc-hybrid")
     vocab = [normalize(v) for v in router.vocab]
 
-    _, test_idx = split_by_trace(triplets)
+    train_idx, test_idx = split_by_trace(triplets)
     n = len(test_idx)
-    print(f"Test triplets: {n}")
+    print(f"Triplets: train={len(train_idx)} test={n}")
 
     mlp = load_mlp(MLP_NPZ)
     print(f"MLP loaded: W1{mlp['W1'].shape}, W2{mlp['W2'].shape}")
 
-    counts, totals, V, name_to_mk = load_markov()
-    print(f"Markov-1 loaded: V={V}")
+    train_triplets = [triplets[i] for i in train_idx]
+    counts, totals, V = build_markov_train(train_triplets)
+    print(f"Markov-1 built from train (V={V})")
 
     def eval_scoring(score_fn, label: str):
         hits = defaultdict(lambda: {k: 0 for k in KS})
         totals_b = defaultdict(int)
         for i in test_idx:
-            cids = cand_idx[i]  # [50]
+            cids = cand_idx[i, :50]  # apples-to-apples with the MLP, which was trained on top-50
             mask = cids >= 0
             if not mask.any():
                 continue
@@ -216,7 +227,7 @@ def main() -> None:
     def s_markov(i, cids_v, cnames, prev_name):
         ret = cand_scores[i, : len(cids_v)]
         ret_n = minmax(ret)
-        mk = markov_score_row(counts, totals, V, name_to_mk, prev_name, cnames)
+        mk = markov_score_row(counts, totals, V, prev_name, cnames)
         mk_n = minmax(mk)
         return MK_ALPHA * ret_n + (1 - MK_ALPHA) * mk_n
 
@@ -242,7 +253,7 @@ def main() -> None:
         hits_b = defaultdict(lambda: {k: 0 for k in KS})
         totals_bx = defaultdict(int)
         for i in test_idx:
-            cids = cand_idx[i]
+            cids = cand_idx[i, :50]
             mask = cids >= 0
             if not mask.any():
                 continue
@@ -258,7 +269,7 @@ def main() -> None:
             X = build_features_batch(q, p, ce, rs)
             mlp_s = mlp_score(X, mlp)
             mlp_n = minmax(mlp_s)
-            mk = markov_score_row(counts, totals, V, name_to_mk, prev_name, cnames)
+            mk = markov_score_row(counts, totals, V, prev_name, cnames)
             mk_n = minmax(mk)
             final = beta * mlp_n + (1 - beta) * mk_n
             order = np.argsort(-final)
