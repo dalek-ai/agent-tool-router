@@ -195,11 +195,20 @@ TF-IDF and encoder cosines: in our LOSO eval the hybrid Pareto-dominates
 both solo backends with `alpha=0.5` on 2/3 held-out sources (see the
 table above).
 
-## Try the pretrained models
+## On HuggingFace
 
-`Router.from_pretrained("<name>")` downloads from
-[huggingface.co/dalek-ai](https://huggingface.co/dalek-ai) on first call
-and caches locally. Three pretrained models are published:
+Everything is mirrored on [huggingface.co/dalek-ai](https://huggingface.co/dalek-ai):
+
+| Surface | Link | What it's for |
+|---|---|---|
+| **Space (live demo)** | [agent-tool-router-demo](https://huggingface.co/spaces/dalek-ai/agent-tool-router-demo) | One-click gradio app. Type a task in EN or FR, get the top-3 tools out of 18 000. No install. |
+| **Models** (4) | [dalek-ai](https://huggingface.co/dalek-ai) | Pretrained routers downloadable via `Router.from_pretrained(...)`. See [models](#pretrained-models) below. |
+| **Dataset** | [agent-tool-router-eval-fr](https://huggingface.co/datasets/dalek-ai/agent-tool-router-eval-fr) | 50 parallel EN/FR evaluation queries used to measure the multilingual gap. MIT. |
+
+### Pretrained models
+
+`Router.from_pretrained("<name>")` downloads from huggingface.co/dalek-ai on
+first call and caches locally. Four pretrained models are published:
 
 - **`baseline-v0`** — 265 tool names that appear ≥ 3 times in the training
   corpus, centroids built from task TF-IDF. The smallest model, no extra
