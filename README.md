@@ -184,6 +184,21 @@ training data. To actually move past the retrieval-recall ceiling, train
 the retriever directly on the next-tool objective rather than stacking
 more reranks on top-K.
 
+**That direct-fine-tune is what
+[`baseline-v1-desc-hybrid-next-v1`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid-next-v1)
+does.** Fine-tuning MiniLM-L6 on 8 386 (task, gold_description,
+hard_negative) triples reshapes the retrieval space itself: recall@200
+on the same held-out triplets jumps from 69.6% to 93.1%, and the
+Markov-1 top-3 rerank K=200 jumps from 54.9% to **75.5%** (+20.6pp).
+The fine-tuned encoder also Pareto-dominates the default English-only
+encoder on the full LOSO refit benchmark (Hermes +1.3pp, ToolACE +6.1pp,
+tau-bench +27.7pp top-3) — supervised next-tool signal generalizes to
+single-task routing too. Reproduce:
+`python router/eval/finetune_retriever_next_tool.py` (re-creates the
+encoder) + `python -m agent_tool_router.train_descriptions --backend
+hybrid --alpha 0.5 --encoder-model models/_finetune/minilm-next-v1
+--out models/baseline-v1-desc-hybrid-next-v1`.
+
 The rerank ships with `baseline-v1-desc-hybrid` (≥ 0.3.0). Pass the
 tool names already called in the trace as `history=` and the top-200
 candidates are reranked with the Markov-1 prior at α=0.1 (the sweep-best
@@ -277,13 +292,13 @@ Everything is mirrored on [huggingface.co/dalek-ai](https://huggingface.co/dalek
 | Surface | Link | What it's for |
 |---|---|---|
 | **Space (live demo)** | [agent-tool-router-demo](https://huggingface.co/spaces/dalek-ai/agent-tool-router-demo) | One-click gradio app. Type a task in EN or FR, get the top-3 tools out of 18 000. No install. |
-| **Models** (4) | [dalek-ai](https://huggingface.co/dalek-ai) | Pretrained routers downloadable via `Router.from_pretrained(...)`. See [models](#pretrained-models) below. |
+| **Models** (5) | [dalek-ai](https://huggingface.co/dalek-ai) | Pretrained routers downloadable via `Router.from_pretrained(...)`. See [models](#pretrained-models) below. |
 | **Dataset** | [agent-tool-router-eval-fr](https://huggingface.co/datasets/dalek-ai/agent-tool-router-eval-fr) | 50 parallel EN/FR evaluation queries used to measure the multilingual gap. MIT. |
 
 ### Pretrained models
 
 `Router.from_pretrained("<name>")` downloads from huggingface.co/dalek-ai on
-first call and caches locally. Four pretrained models are published:
+first call and caches locally. Five pretrained models are published:
 
 - **`baseline-v0`** — 265 tool names that appear ≥ 3 times in the training
   corpus, centroids built from task TF-IDF. The smallest model, no extra
@@ -301,6 +316,15 @@ first call and caches locally. Four pretrained models are published:
   at 82%. On the full English LOSO refit benchmark the multilingual encoder
   trails the default by ~3.9pp weighted overall, so use the default if all
   your queries are English. ~80 MB.
+- **`baseline-v1-desc-hybrid-next-v1`** — same hybrid pipeline, but the
+  encoder has been fine-tuned on 8 386 next-tool prediction triplets with a
+  contrastive (task, gold_description, hard_negative) loss. On held-out
+  next-tool prediction (n=2 094), Markov-1 top-3 jumps from 54.9% (default
+  hybrid, top-200 rerank) to **75.5%** (+20.6pp), and recall@200 from
+  69.6% to 93.1%. On the full English LOSO refit benchmark (n=30 425),
+  the fine-tuned encoder Pareto-dominates: Hermes +1.3pp, ToolACE +6.1pp,
+  tau-bench +27.7pp top-3. ~30 MB. Encoder weights live separately at
+  [`dalek-ai/minilm-next-v1`](https://huggingface.co/dalek-ai/minilm-next-v1).
 
 ```python
 from agent_tool_router import Router

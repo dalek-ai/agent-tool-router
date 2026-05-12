@@ -29,6 +29,7 @@ DEFAULT_MODELS = [
     "baseline-v1-desc",
     "baseline-v1-desc-hybrid",
     "baseline-v1-desc-hybrid-multilingual",
+    "baseline-v1-desc-hybrid-next-v1",
 ]
 
 ORG = "dalek-ai"
@@ -314,11 +315,85 @@ Prefer the default model if all your queries are English.
 """
 
 
+def card_baseline_v1_desc_hybrid_next_v1() -> str:
+    return _FRONTMATTER_EN + f"""
+# baseline-v1-desc-hybrid-next-v1
+
+Same hybrid pipeline as
+[`baseline-v1-desc-hybrid`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid),
+but the encoder has been fine-tuned on **8 386 next-tool prediction
+triplets** with contrastive (task, gold_description, hard_negative)
+triples. Hard negatives are sampled from the top-50 retrieval of the
+**previous** hybrid encoder, so each gradient step pushes the encoder
+past its own retrieval mistakes.
+
+Encoder lives at
+[`dalek-ai/minilm-next-v1`](https://huggingface.co/dalek-ai/minilm-next-v1),
+loaded lazily on the first `route()` call. ~30 MB of TF-IDF + encoder
+centroids on disk in this repo.
+
+## Quick start
+
+{_INSTALL_NOTE}
+```bash
+pip install "agent-tool-router[encoder] @ git+https://github.com/dalek-ai/agent-tool-router.git"
+```
+
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v1-desc-hybrid-next-v1")
+r.route(
+    "I want to add a checked bag to my reservation",
+    k=3,
+    history=["update_reservation_flights"],
+)
+```
+
+## Why fine-tune the retriever
+
+Session 25 found that a Markov-1 rerank on top-200 retrieval saturated
+the mechanical ceiling (recall@200 = 69.6% on held-out next-tool
+triplets, Markov-1 reached 54.9% top-3 = 99% of that ceiling). To go
+past 55% top-3 the retriever itself had to improve.
+
+## Numbers
+
+**Next-tool prediction on 2 094 held-out triplets** (trace_id 80/20
+split, seed=17, Markov-1 with α=0.4 rebuilt from the 80% train slice):
+
+| Encoder | recall@50 | recall@200 | Markov top-3 K=50 | Markov top-3 K=200 |
+|---|---:|---:|---:|---:|
+| `MiniLM-L6` (baseline-v1-desc-hybrid) | 58.9% | 69.6% | 48.0% | 54.9% |
+| **`minilm-next-v1`** (this model) | **83.4%** | **93.1%** | **70.2%** | **75.5%** |
+
+**+23.5pp recall@200, +20.6pp Markov top-3 K=200.** Reproduce:
+`python -m router.eval.eval_next_tool_widen --cache-dir data/cache/next_tool_v1 --model dalek-ai/baseline-v1-desc-hybrid-next-v1`.
+
+**LOSO refit hybrid (full 18 671-tool catalog, α=0.5, top-3 per call):**
+
+| held_out | n_calls | `MiniLM-L6` | **`minilm-next-v1`** | delta |
+|---|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 72.3% | **73.6%** | +1.3pp |
+| ToolACE | 17 169 | 58.7% | **64.8%** | +6.1pp |
+| tau-bench | 8 880 | 11.1% | **38.8%** | **+27.7pp** |
+
+The fine-tune **Pareto-dominates** the default encoder on every
+held-out source. The tau-bench gain (+27.7pp) is the largest single-step
+improvement on that benchmark since the v0 → v1-desc switch.
+
+## Repo & demo
+
+[github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
+{_DEMO_LINK}
+"""
+
+
 CARDS = {
     "baseline-v0": card_baseline_v0,
     "baseline-v1-desc": card_baseline_v1_desc,
     "baseline-v1-desc-hybrid": card_baseline_v1_desc_hybrid,
     "baseline-v1-desc-hybrid-multilingual": card_baseline_v1_desc_hybrid_multilingual,
+    "baseline-v1-desc-hybrid-next-v1": card_baseline_v1_desc_hybrid_next_v1,
 }
 
 

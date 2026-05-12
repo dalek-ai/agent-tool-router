@@ -24,8 +24,10 @@ Otherwise log it as a negative finding.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import random
+import sys
 from collections import defaultdict
 from pathlib import Path
 from time import time
@@ -33,8 +35,12 @@ from time import time
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 TRIPLETS = ROOT / "data" / "next_tool_triplets.jsonl"
-CACHE = ROOT / "data" / "cache" / "next_tool"
+DEFAULT_CACHE = ROOT / "data" / "cache" / "next_tool"
+DEFAULT_MODEL = "baseline-v1-desc-hybrid"
 
 SEED = 17
 BUCKET_SIZES = (50, 100, 150, 200)
@@ -110,11 +116,17 @@ def bucket_pos(t):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE))
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    args = parser.parse_args()
+    cache = Path(args.cache_dir)
+
     triplets = [json.loads(line) for line in TRIPLETS.open()]
-    cand_idx = np.load(CACHE / "cand_idx.npy")
-    cand_scores = np.load(CACHE / "cand_scores.npy")
-    prev_idx = np.load(CACHE / "prev_idx.npy")
-    gold_idx = np.load(CACHE / "gold_idx.npy")
+    cand_idx = np.load(cache / "cand_idx.npy")
+    cand_scores = np.load(cache / "cand_scores.npy")
+    prev_idx = np.load(cache / "prev_idx.npy")
+    gold_idx = np.load(cache / "gold_idx.npy")
 
     print(f"Cache: cand_idx {cand_idx.shape}, cand_scores {cand_scores.shape}")
     assert cand_idx.shape[1] >= max(BUCKET_SIZES), (
@@ -123,7 +135,7 @@ def main():
 
     from agent_tool_router import Router
 
-    router = Router.from_pretrained("baseline-v1-desc-hybrid")
+    router = Router.from_pretrained(args.model)
     vocab = [normalize(v) for v in router.vocab]
 
     train_idx, test_idx = split_by_trace(triplets)

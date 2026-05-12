@@ -21,18 +21,23 @@ downstream split can re-derive the same trace_id 80/20 with seed=17.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 from pathlib import Path
 from time import time
 
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from agent_tool_router import Router
 
-ROOT = Path(__file__).resolve().parents[2]
 TRIPLETS = ROOT / "data" / "next_tool_triplets.jsonl"
-CACHE_DIR = ROOT / "data" / "cache" / "next_tool"
-MODEL = "baseline-v1-desc-hybrid"
+DEFAULT_CACHE_DIR = ROOT / "data" / "cache" / "next_tool"
+DEFAULT_MODEL = "baseline-v1-desc-hybrid"
 TOP_N = 200  # widened for N63 retrieval-bucket sweep; downstream eval scripts
              # slice [:50] when reproducing earlier numbers
 BATCH = 256
@@ -43,10 +48,19 @@ def normalize(name: str) -> str:
 
 
 def main() -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help="pretrained name or path (default: %(default)s)")
+    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE_DIR),
+                        help="output cache directory")
+    args = parser.parse_args()
+    cache_dir = Path(args.cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading router '{MODEL}'...")
-    router = Router.from_pretrained(MODEL)
+    print(f"Loading router '{args.model}'...")
+    router = Router.from_pretrained(args.model)
+    CACHE_DIR = cache_dir
+    MODEL = args.model
     name_to_idx = {normalize(v): i for i, v in enumerate(router.vocab)}
 
     triplets = [json.loads(line) for line in TRIPLETS.open()]
