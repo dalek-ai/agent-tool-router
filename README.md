@@ -134,6 +134,44 @@ deps), so we don't ship it in the default install. The TF-IDF path is the
 SDK default; the encoder and hybrid backends are available behind an
 optional extras: `pip install agent-tool-router[encoder]`.
 
+### Next-tool prediction (history-aware)
+
+The retrieval router scores tools against the user query. That works when
+the query describes the tool (`"cancel my order" → cancelOrder`). It
+breaks when the agent is mid-trajectory and the *next* tool depends on
+what was already called.
+
+We mined 10 480 `(query, history, next_tool)` triplets from the 7 184
+multi-turn traces in the dataset (ToolACE + Hermes + tau-bench, after
+collapsing consecutive duplicates) and ran a Markov-1 rerank on top of
+the shipped retrieval (`top-50` candidates, rerank by
+`α · retrieval + (1-α) · P(next | last_history_tool)`, 80/20 split by
+trace_id, add-one smoothing).
+
+| Setup                        | top-1 | top-3 | top-5 | top-10 |
+|---                           |---:|---:|---:|---:|
+| Retrieval-only (α=1.0)       | 13.8% | 32.7% | 38.8% | 45.4% |
+| **Markov-1 rerank (α=0.4)**  | **34.6%** | **48.0%** | **50.5%** | **53.6%** |
+
+That is **+15.3pp top-3** on the test set (n=2094) from a one-line prior.
+Stratified by position, the gap is largest deep in the trajectory: on
+Hermes at t≥3 the rerank pulls top-3 from ~31% to **100%**; on tau-bench
+at t=1 it goes 7.0% → 37.0%. The history carries signal that the query
+does not, and a learned prior on top-50 retrieval is enough to surface
+it.
+
+Reproduce:
+```
+python router/eval/build_next_tool_dataset.py
+python router/eval/eval_next_tool_baseline.py
+python router/eval/eval_next_tool_markov.py
+```
+
+Markov-1 is the floor, not the ceiling. The same setup with a learned
+rerank (history-aware MLP, contextual bi-encoder, …) is the next step;
+the point of this section is that the dataset has signal a retrieval
+router cannot see.
+
 ## Use it on your own tools
 
 If your agent has 5 custom tools (`web_search`, `internal_kb`,
@@ -357,8 +395,10 @@ The interesting questions are downstream:
 1. **Cold-start tool routing.** Given a tool you've never seen, can you route
    to it from its description alone? This is the actual hard problem and where
    most of the dataset (95% singleton long-tail) is currently dead weight.
-2. **Sequence routing.** The current model returns a set, not an ordered plan.
-   The data has the order; we're just not using it yet.
+2. **Sequence routing.** First pass shipped: history-aware rerank
+   (Markov-1 on top of retrieval) lifts top-3 next-tool accuracy from
+   32.7% → 48.0% on a held-out test set; see "Next-tool prediction"
+   above. Learned rerank is next.
 3. **Cross-source generalization.** Names don't transfer (LOSO ≈ 0%);
    descriptions do (LOSO ≈ 35–74% top-3 on the two held-out sources with
    broad catalogs; see Caveats). Next step: make `Router` first-class on
