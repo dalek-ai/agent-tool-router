@@ -167,10 +167,18 @@ python router/eval/eval_next_tool_baseline.py
 python router/eval/eval_next_tool_markov.py
 ```
 
-Markov-1 is the floor, not the ceiling. The same setup with a learned
-rerank (history-aware MLP, contextual bi-encoder, …) is the next step;
-the point of this section is that the dataset has signal a retrieval
-router cannot see.
+Markov-1 was meant as the floor. The actual ceiling on this setup is the
+retrieval recall: with `top-50` candidates, the gold is reachable in
+58.9% of the held-out triplets, and Markov-1 already hits 58.7%. A small
+learned MLP rerank (concat of query / prev-tool / candidate MiniLM
+embeddings + retrieval score, 1 hidden layer of 128, trained on 5K
+positives) was tested in `router/eval/train_next_tool_mlp.py` and
+`eval_next_tool_mlp.py`. It lifts top-3 from retrieval 32.7% to 40.3%
+(+7.6pp), but loses -18.4pp top-3 versus Markov-1 — the counts-based
+transition prior is hard to outscore with dense features on this much
+training data. The next way to actually move the ceiling is to widen
+retrieval (top-100/200) or train a retriever directly on the next-tool
+objective, not to keep stacking reranks on top-50.
 
 The rerank ships with `baseline-v1-desc-hybrid` (≥ 0.2.0). Pass the
 tool names already called in the trace as `history=` and the top-50
@@ -420,10 +428,14 @@ The interesting questions are downstream:
 1. **Cold-start tool routing.** Given a tool you've never seen, can you route
    to it from its description alone? This is the actual hard problem and where
    most of the dataset (95% singleton long-tail) is currently dead weight.
-2. **Sequence routing.** First pass shipped: history-aware rerank
-   (Markov-1 on top of retrieval) lifts top-3 next-tool accuracy from
-   32.7% → 48.0% on a held-out test set; see "Next-tool prediction"
-   above. Learned rerank is next.
+2. **Sequence routing.** History-aware Markov-1 rerank shipped in
+   `baseline-v1-desc-hybrid` ≥ 0.2.0: top-3 next-tool accuracy 32.7% →
+   48.0% on a held-out test set, and 58.7% on the subset where the gold
+   is reachable in the top-50. A learned MLP rerank was tested and
+   archived (loses to Markov-1 by 18pp top-3, the dense features can't
+   recover counts-based transition mass). To actually push past 58.7%
+   the retrieval itself has to improve — wider top-N, or training the
+   retriever on the next-tool objective.
 3. **Cross-source generalization.** Names don't transfer (LOSO ≈ 0%);
    descriptions do (LOSO ≈ 35–74% top-3 on the two held-out sources with
    broad catalogs; see Caveats). Next step: make `Router` first-class on
