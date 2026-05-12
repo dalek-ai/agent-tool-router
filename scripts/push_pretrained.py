@@ -197,6 +197,32 @@ r.route("cancel my order and refund the credit", k=3)
 # ['cancel_pending_order', 'cancel_order', 'refundOrder']
 ```
 
+## History-aware rerank (≥ 0.2.0)
+
+The model ships a Markov-1 transition table (~21 KB) trained on the
+same 7 184 multi-turn traces. Pass the tool names already called in
+the trace as `history=` and the top-50 retrieval candidates are
+reranked with a learned prior:
+
+```python
+r.route(
+    "I want to add a checked bag to my reservation",
+    k=3,
+    history=["update_reservation_flights"],
+)
+# ['update_reservation_baggages', 'update_reservation_passengers', 'cancel_reservation']
+```
+
+Measured lift on n=2094 held-out triplets (split by trace_id, α=0.4):
+
+| Setup                       | top-1 | top-3 | top-5 |
+|---                          |---:|---:|---:|
+| Retrieval-only              | 13.8% | 32.7% | 38.8% |
+| **Markov-1 rerank (α=0.4)** | **34.6%** | **48.0%** | **50.5%** |
+
+No-op when `history` is omitted or empty. Override with
+`markov_alpha=0.0` (prior-only) or `1.0` (retrieval-only).
+
 ## Numbers
 
 Per-call top-3 against the full 18 671-tool catalog (n=30 425 calls):

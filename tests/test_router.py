@@ -247,6 +247,92 @@ class TestSaveLoadRoundtrip(unittest.TestCase):
         self.assertEqual(out, ["cancel_order"])
 
 
+class TestHistoryAwareRerank(unittest.TestCase):
+    """Markov-1 rerank when history is passed and a table is loaded."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="atr_hist_"))
+        self.r = Router.from_descriptions([
+            ("lookup_order", "Look up a customer order by id"),
+            ("cancel_order", "Cancel a pending customer order"),
+            ("refund_order", "Issue a refund for a canceled order"),
+            ("modify_order", "Change line items on a pending order"),
+            ("search_flights", "Search for flights between airports"),
+        ])
+        # Synthetic Markov table: lookup_order is followed by cancel_order
+        # 9 times, by modify_order once. Other priors are flat.
+        names = ["cancel_order", "lookup_order", "modify_order",
+                 "refund_order", "search_flights"]
+        idx = {n: i for i, n in enumerate(names)}
+        rows, cols, data = [], [], []
+        for nxt, c in [("cancel_order", 9), ("modify_order", 1)]:
+            rows.append(idx["lookup_order"])
+            cols.append(idx[nxt])
+            data.append(c)
+        mat = sp.csr_matrix(
+            (np.array(data, dtype=np.int32),
+             (np.array(rows, dtype=np.int32), np.array(cols, dtype=np.int32))),
+            shape=(len(names), len(names)),
+        )
+        self.r.markov_counts = mat
+        self.r.markov_vocab = names
+        self.r._markov_idx = idx
+        self.r._markov_totals = np.asarray(mat.sum(axis=1)).ravel().astype(np.int64)
+        self.r._markov_V = len(names)
+        self.r.markov_alpha = 0.4
+        self.r.markov_rerank_n = 5
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_no_history_matches_retrieval_only(self):
+        # Without history, the rerank path is skipped.
+        baseline = self.r.route("refund my canceled order", k=3)
+        self.assertEqual(baseline, self.r.route(
+            "refund my canceled order", k=3, history=None,
+        ))
+
+    def test_empty_history_matches_retrieval_only(self):
+        baseline = self.r.route("refund my canceled order", k=3)
+        self.assertEqual(baseline, self.r.route(
+            "refund my canceled order", k=3, history=[],
+        ))
+
+    def test_history_reorders_candidates(self):
+        # A query mentioning both "modify" and "cancel" leaves ambiguity in
+        # the retrieval scores. With history=[lookup_order], the Markov
+        # prior strongly favors cancel_order (9 obs vs 1 for modify_order),
+        # so it should be promoted ahead of modify_order.
+        with_history = self.r.route(
+            "act on my pending order", k=5, history=["lookup_order"],
+        )
+        # cancel_order should rank ahead of modify_order under the prior.
+        self.assertLess(
+            with_history.index("cancel_order"),
+            with_history.index("modify_order"),
+        )
+
+    def test_unknown_prev_falls_back_to_uniform(self):
+        # An unseen prev tool yields uniform Markov scores, so the final
+        # ranking is driven by the retrieval signal alone.
+        baseline = self.r.route("cancel my order", k=3)
+        with_unseen = self.r.route(
+            "cancel my order", k=3, history=["never_seen_tool"],
+        )
+        self.assertEqual(baseline, with_unseen)
+
+    def test_save_load_roundtrip_preserves_markov(self):
+        self.r.save(self.tmpdir / "model")
+        self.assertTrue((self.tmpdir / "model" / "markov_counts.npz").exists())
+        self.assertTrue((self.tmpdir / "model" / "markov_vocab.txt").exists())
+        r2 = Router.from_pretrained(str(self.tmpdir / "model"))
+        self.assertIsNotNone(r2.markov_counts)
+        self.assertEqual(r2.markov_vocab, self.r.markov_vocab)
+        self.assertEqual(r2.markov_alpha, 0.4)
+        out = r2.route("act on my pending order", k=5, history=["lookup_order"])
+        self.assertLess(out.index("cancel_order"), out.index("modify_order"))
+
+
 class TestConstructorValidation(unittest.TestCase):
     def test_missing_vocab_raises(self):
         with self.assertRaises(ValueError):

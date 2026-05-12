@@ -71,6 +71,10 @@ class Router:
         encoder_model_name: Optional[str] = None,
         alpha: float = 1.0,
         backend: str = "tfidf",
+        markov_counts: Optional["sp.csr_matrix"] = None,
+        markov_vocab: Optional[list[str]] = None,
+        markov_alpha: float = 0.4,
+        markov_rerank_n: int = 50,
     ):
         if vocab is None:
             raise ValueError("Router requires a vocab list.")
@@ -93,6 +97,21 @@ class Router:
         self.encoder_model_name = encoder_model_name
         self.alpha = float(alpha)
         self.backend = backend
+        self.markov_counts = markov_counts
+        self.markov_vocab = list(markov_vocab) if markov_vocab is not None else None
+        self.markov_alpha = float(markov_alpha)
+        self.markov_rerank_n = int(markov_rerank_n)
+        if self.markov_counts is not None and self.markov_vocab is not None:
+            self._markov_idx = {n: i for i, n in enumerate(self.markov_vocab)}
+            # Pre-compute row sums for the smoothing denominator.
+            self._markov_totals = np.asarray(
+                self.markov_counts.sum(axis=1)
+            ).ravel().astype(np.int64)
+            self._markov_V = len(self.markov_vocab)
+        else:
+            self._markov_idx = None
+            self._markov_totals = None
+            self._markov_V = 0
 
     @classmethod
     def from_pretrained(cls, name_or_path: str) -> "Router":
@@ -144,6 +163,8 @@ class Router:
         backend = cfg.get("backend", "tfidf")
         alpha = float(cfg.get("alpha", 0.5))
         encoder_model_name = cfg.get("encoder_model_name")
+        markov_alpha = float(cfg.get("markov_alpha", 0.4))
+        markov_rerank_n = int(cfg.get("markov_rerank_n", 50))
 
         vec = None
         centroids = None
@@ -173,6 +194,17 @@ class Router:
             )
 
         vocab = (candidate / "vocab.txt").read_text(encoding="utf-8").splitlines()
+
+        markov_counts = None
+        markov_vocab = None
+        markov_path = candidate / "markov_counts.npz"
+        markov_vocab_path = candidate / "markov_vocab.txt"
+        if markov_path.exists() and markov_vocab_path.exists():
+            markov_counts = sp.load_npz(markov_path).tocsr()
+            markov_vocab = markov_vocab_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+
         return cls(
             vec=vec,
             centroids=centroids,
@@ -181,6 +213,10 @@ class Router:
             encoder_model_name=encoder_model_name,
             alpha=alpha,
             backend=backend,
+            markov_counts=markov_counts,
+            markov_vocab=markov_vocab,
+            markov_alpha=markov_alpha,
+            markov_rerank_n=markov_rerank_n,
         )
 
     @classmethod
@@ -382,17 +418,50 @@ class Router:
         task: str | Iterable[str],
         k: int = 3,
         return_scores: bool = False,
+        history: Optional[list[str] | Iterable[list[str]]] = None,
+        markov_alpha: Optional[float] = None,
     ) -> list[str] | list[RouteResult] | list[list[str]] | list[list[RouteResult]]:
         """Return top-k tool names for one task or a batch of tasks.
 
         - If `task` is a str: returns list[str] (or list[RouteResult] when
           return_scores=True), of length up to k.
         - If `task` is an iterable of str: returns list-of-list, same shape.
+
+        Optional ``history`` enables history-aware rerank: pass the list of
+        tool names already called in the current trace (per task, if batch).
+        When the model directory ships a Markov-1 transition table
+        (baseline-v1-desc-hybrid does), the top-``markov_rerank_n``
+        retrieval candidates are rescored with
+        ``markov_alpha * retrieval_norm + (1 - markov_alpha) * markov_norm``.
+        Pass ``markov_alpha`` to override the model's default
+        (0.4 on baseline-v1-desc-hybrid, the sweep-best on n=2094 test).
+
+        Measured lift on baseline-v1-desc-hybrid (n=2094 held-out triplets):
+        top-1 13.8% → 34.6% (+20.8pp), top-3 32.7% → 48.0% (+15.3pp).
+        Reproduce with router/eval/eval_next_tool_markov.py.
         """
         single = isinstance(task, str)
         tasks = [task] if single else list(task)
         if not tasks:
             return []
+
+        if history is None:
+            histories: list[list[str]] = [[] for _ in tasks]
+        elif single:
+            histories = [list(history) if history is not None else []]
+        else:
+            histories = [list(h) if h is not None else [] for h in history]
+            if len(histories) != len(tasks):
+                raise ValueError(
+                    f"history must align with tasks: got {len(histories)} histories "
+                    f"for {len(tasks)} tasks."
+                )
+        use_markov = (
+            any(h for h in histories)
+            and self.markov_counts is not None
+            and self._markov_V > 0
+        )
+        alpha_mk = self.markov_alpha if markov_alpha is None else float(markov_alpha)
 
         from sklearn.preprocessing import normalize
 
@@ -432,20 +501,69 @@ class Router:
         else:
             scores = self.alpha * scores_tfidf + (1.0 - self.alpha) * scores_enc
 
-        ranked = np.argsort(-scores, axis=1)
         out = []
         for row_i in range(scores.shape[0]):
-            idxs = ranked[row_i, :k].tolist()
-            if return_scores:
-                out.append(
-                    [
-                        RouteResult(self.vocab[i], float(scores[row_i, i]))
-                        for i in idxs
-                    ]
+            row_scores = scores[row_i]
+            h = histories[row_i]
+            if use_markov and h:
+                # Retrieve top-N candidates, rerank with Markov-1 prior.
+                n_cand = min(self.markov_rerank_n, row_scores.shape[0])
+                cand_idx = np.argpartition(-row_scores, n_cand - 1)[:n_cand]
+                cand_idx = cand_idx[np.argsort(-row_scores[cand_idx])]
+                ret_scores = row_scores[cand_idx].astype(np.float64)
+                ret_norm = (ret_scores - ret_scores.min()) / (
+                    ret_scores.max() - ret_scores.min() + 1e-9
                 )
+                mk_scores = self._markov_probs(
+                    h[-1], [self.vocab[i] for i in cand_idx]
+                )
+                mk_norm = (mk_scores - mk_scores.min()) / (
+                    mk_scores.max() - mk_scores.min() + 1e-9
+                )
+                final = alpha_mk * ret_norm + (1.0 - alpha_mk) * mk_norm
+                order = np.argsort(-final)
+                idxs = [int(cand_idx[j]) for j in order[:k]]
+                if return_scores:
+                    out.append(
+                        [
+                            RouteResult(self.vocab[i], float(final[order[j]]))
+                            for j, i in enumerate(idxs)
+                        ]
+                    )
+                else:
+                    out.append([self.vocab[i] for i in idxs])
             else:
-                out.append([self.vocab[i] for i in idxs])
+                ranked = np.argsort(-row_scores)[:k]
+                if return_scores:
+                    out.append(
+                        [
+                            RouteResult(self.vocab[i], float(row_scores[i]))
+                            for i in ranked.tolist()
+                        ]
+                    )
+                else:
+                    out.append([self.vocab[i] for i in ranked.tolist()])
         return out[0] if single else out
+
+    def _markov_probs(self, prev: str, candidates: list[str]) -> np.ndarray:
+        """Add-one-smoothed P(candidate | prev) over the Markov vocab."""
+        prev_n = (prev or "").strip().lower()
+        V = self._markov_V
+        prev_idx = self._markov_idx.get(prev_n) if self._markov_idx else None
+        if prev_idx is None:
+            return np.full(len(candidates), 1.0 / max(V, 1), dtype=np.float64)
+        row = self.markov_counts.getrow(prev_idx)
+        total = float(self._markov_totals[prev_idx])
+        denom = total + V
+        # Pull only the columns we need from the sparse row.
+        row_dense = row.toarray().ravel()
+        probs = np.empty(len(candidates), dtype=np.float64)
+        for i, cand in enumerate(candidates):
+            cand_n = (cand or "").strip().lower()
+            j = self._markov_idx.get(cand_n)
+            count = float(row_dense[j]) if j is not None else 0.0
+            probs[i] = (count + 1.0) / denom
+        return probs
 
     def save(self, path: str | Path) -> Path:
         path = Path(path)
@@ -468,6 +586,15 @@ class Router:
         }
         if self.encoder_model_name:
             config["encoder_model_name"] = self.encoder_model_name
+        if self.markov_counts is not None and self.markov_vocab is not None:
+            sp.save_npz(
+                path / "markov_counts.npz", self.markov_counts.tocsr()
+            )
+            (path / "markov_vocab.txt").write_text(
+                "\n".join(self.markov_vocab), encoding="utf-8",
+            )
+            config["markov_alpha"] = self.markov_alpha
+            config["markov_rerank_n"] = self.markov_rerank_n
         import json as _json
         (path / "config.json").write_text(
             _json.dumps(config, indent=2) + "\n", encoding="utf-8",

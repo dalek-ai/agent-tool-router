@@ -172,6 +172,31 @@ rerank (history-aware MLP, contextual bi-encoder, …) is the next step;
 the point of this section is that the dataset has signal a retrieval
 router cannot see.
 
+The rerank ships with `baseline-v1-desc-hybrid` (≥ 0.2.0). Pass the
+tool names already called in the trace as `history=` and the top-50
+candidates are reranked with the Markov-1 prior at α=0.4 (the sweep-best
+on the held-out test):
+
+```python
+r = Router.from_pretrained("baseline-v1-desc-hybrid")
+
+# Without history: pure retrieval.
+r.route("I want to add a checked bag to my reservation", k=3)
+# ['update_reservation_baggages', 'completeReservation', 'book_reservation']
+
+# With history: the prior pulls in tools that usually follow the last one.
+r.route(
+    "I want to add a checked bag to my reservation",
+    k=3,
+    history=["update_reservation_flights"],
+)
+# ['update_reservation_baggages', 'update_reservation_passengers', 'cancel_reservation']
+```
+
+Override the mix with `markov_alpha=0.0` (Markov-only) or `1.0`
+(retrieval-only). On `baseline-v1-desc-hybrid` the table adds ~21 KB to
+the download; it's a no-op when `history` is omitted.
+
 ## Use it on your own tools
 
 If your agent has 5 custom tools (`web_search`, `internal_kb`,
