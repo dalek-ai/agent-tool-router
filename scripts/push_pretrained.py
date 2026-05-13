@@ -30,6 +30,7 @@ DEFAULT_MODELS = [
     "baseline-v1-desc-hybrid",
     "baseline-v1-desc-hybrid-multilingual",
     "baseline-v1-desc-hybrid-next-v1",
+    "baseline-v1-desc-hybrid-multilingual-next-v1",
 ]
 
 ORG = "dalek-ai"
@@ -406,12 +407,111 @@ model). Reproduce: `python -m router.eval.eval_fr_pretrained`.
 """
 
 
+def card_baseline_v1_desc_hybrid_multilingual_next_v1() -> str:
+    return _FRONTMATTER_MULTI + f"""
+# baseline-v1-desc-hybrid-multilingual-next-v1
+
+Combines two of the project's most useful encoder shifts in one model:
+
+1. **Multilingual base** — encoder is
+   `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (117M
+   params, 50+ languages), so French / Spanish / German queries route
+   into the same 18 671-tool English catalog as the default.
+2. **Next-tool fine-tune** — the multilingual encoder has been
+   fine-tuned on **8 386 next-tool prediction triplets** with a
+   contrastive (task, gold_description, hard_negative) objective. Hard
+   negatives come from the previous hybrid encoder's top-50 retrieval,
+   so each gradient step pushes past its own retrieval mistakes.
+
+Encoder lives at
+[`dalek-ai/multilingual-next-v1`](https://huggingface.co/dalek-ai/multilingual-next-v1),
+loaded lazily on the first `route()` call. ~33 MB of TF-IDF + encoder
+centroids on disk in this repo.
+
+## Quick start
+
+{_INSTALL_NOTE}
+```bash
+pip install "agent-tool-router[encoder] @ git+https://github.com/dalek-ai/agent-tool-router.git"
+```
+
+```python
+from agent_tool_router import Router
+r = Router.from_pretrained("baseline-v1-desc-hybrid-multilingual-next-v1")
+r.route("annule ma commande en attente et rembourse le crédit", k=3)
+r.route(
+    "I want to add a checked bag to my reservation",
+    k=3,
+    history=["update_reservation_flights"],
+)
+```
+
+## Numbers
+
+**Next-tool prediction on 2 094 held-out triplets** (trace_id 80/20
+split, seed=17, Markov-1 train-only):
+
+| Encoder | recall@50 | recall@200 | Markov top-3 K=50 | Markov top-3 K=200 |
+|---|---:|---:|---:|---:|
+| `MiniLM-L6` (baseline-v1-desc-hybrid) | 58.9% | 69.6% | 48.0% | 54.9% |
+| `multilingual-MiniLM-L12` (baseline-v1-desc-hybrid-multilingual) | — | — | — | — |
+| `minilm-next-v1` (baseline-v1-desc-hybrid-next-v1) | 83.4% | 93.1% | 70.2% | 75.5% |
+| **`multilingual-next-v1`** (this model) | **85.2%** | 92.1% | **71.5%** | 73.7% |
+
+The L12 base **beats** the L6 base on recall@50 and Markov top-3 K=50,
+at the cost of ~2pp on recall@200 (the L6 fine-tune still wins the
+top-200 rerank). Reproduce:
+`python -m router.eval.eval_next_tool_widen --cache-dir data/cache/next_tool_multilingual_v1 --model dalek-ai/baseline-v1-desc-hybrid-multilingual-next-v1`.
+
+**LOSO refit hybrid (full 18 671-tool catalog, α=0.5, top-3 per call):**
+
+| held_out | n_calls | `MiniLM-L6` | multilingual base | `minilm-next-v1` | **multilingual-next-v1** |
+|---|---:|---:|---:|---:|---:|
+| Hermes function-calling-v1 | 4 376 | 72.3% | 63.5% | **73.6%** | 70.8% |
+| ToolACE | 17 169 | 58.7% | 54.8% | **64.8%** | 59.1% |
+| tau-bench | 8 880 | 11.1% | 9.6% | 38.8% | **43.5%** |
+
+The fine-tune **Pareto-dominates** the plain multilingual base on every
+held-out source (Hermes +7.3pp, ToolACE +4.3pp, **tau-bench +33.9pp**).
+Compared to the English-only `minilm-next-v1` fine-tune, it gives up
+~3pp on Hermes / ToolACE in exchange for an extra +4.7pp on tau-bench
+and the multilingual coverage.
+
+## FR/EN qualitative probe (n=50 parallel queries)
+
+| model | EN top-3 | FR top-3 | EN top-5 | FR top-5 |
+|---|---:|---:|---:|---:|
+| baseline-v1-desc-hybrid (default `MiniLM-L6`) | 82% | 26% | 90% | 30% |
+| baseline-v1-desc-hybrid-multilingual | 82% | 54% | 90% | 62% |
+| baseline-v1-desc-hybrid-next-v1 | 86% | 28% | 94% | 28% |
+| **baseline-v1-desc-hybrid-multilingual-next-v1** | **84%** | **54%** | 90% | 60% |
+
+**No French drift** from the EN-only fine-tune triples (54% top-3 FR
+identical to the plain multilingual). **+2pp EN top-3** over the plain
+multilingual. Reproduce: `python -m router.eval.eval_fr_pretrained`.
+
+## When to use which
+
+| Catalog / queries | Recommended model |
+|---|---|
+| English-only queries | [`baseline-v1-desc-hybrid-next-v1`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid-next-v1) |
+| Mixed FR/EN, multi-step agents | **this model** |
+| FR/EN without history rerank | [`baseline-v1-desc-hybrid-multilingual`](https://huggingface.co/dalek-ai/baseline-v1-desc-hybrid-multilingual) (strictly dominated by this model, kept for backward compat) |
+
+## Repo & demo
+
+[github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
+{_DEMO_LINK}
+"""
+
+
 CARDS = {
     "baseline-v0": card_baseline_v0,
     "baseline-v1-desc": card_baseline_v1_desc,
     "baseline-v1-desc-hybrid": card_baseline_v1_desc_hybrid,
     "baseline-v1-desc-hybrid-multilingual": card_baseline_v1_desc_hybrid_multilingual,
     "baseline-v1-desc-hybrid-next-v1": card_baseline_v1_desc_hybrid_next_v1,
+    "baseline-v1-desc-hybrid-multilingual-next-v1": card_baseline_v1_desc_hybrid_multilingual_next_v1,
 }
 
 

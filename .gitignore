@@ -41,3 +41,4 @@ inbox/
 .*_token_tmp
 *.token
 .hf_token*
+logs/

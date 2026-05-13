@@ -19,6 +19,7 @@ produce a new hybrid pretrained.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import random
 import sys
@@ -37,9 +38,9 @@ if str(ROOT) not in sys.path:
 TRIPLETS = ROOT / "data" / "next_tool_triplets.jsonl"
 DESCS = ROOT / "data" / "tool_descriptions.jsonl"
 CACHE = ROOT / "data" / "cache" / "next_tool"
-OUT = ROOT / "models" / "_finetune" / "minilm-next-v1"
 
-BASE = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_BASE = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_OUT = ROOT / "models" / "_finetune" / "minilm-next-v1"
 SEED = 17
 HARD_NEGS_PER_POS = 1
 EPOCHS = 2
@@ -69,6 +70,27 @@ def split_by_trace(triplets, frac=0.8):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--base-model",
+        default=DEFAULT_BASE,
+        help="HF id or local path of the encoder to fine-tune (default: MiniLM-L6).",
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_OUT,
+        help="Where to save the fine-tuned encoder (default: models/_finetune/minilm-next-v1).",
+    )
+    ap.add_argument("--epochs", type=int, default=EPOCHS)
+    ap.add_argument("--batch", type=int, default=BATCH)
+    ap.add_argument("--lr", type=float, default=LR)
+    ap.add_argument("--max-len", type=int, default=MAX_LEN)
+    args = ap.parse_args()
+
+    OUT = args.out
+    BASE = args.base_model
+    max_len = args.max_len
     OUT.parent.mkdir(parents=True, exist_ok=True)
 
     print("Loading data...")
@@ -140,18 +162,18 @@ def main():
 
     print(f"\nLoading base encoder: {BASE}")
     model = SentenceTransformer(BASE, device=device)
-    model.max_seq_length = MAX_LEN
+    model.max_seq_length = max_len
 
-    train_dl = DataLoader(examples, shuffle=True, batch_size=BATCH)
+    train_dl = DataLoader(examples, shuffle=True, batch_size=args.batch)
     loss = losses.MultipleNegativesRankingLoss(model)
 
-    print(f"\nFine-tuning ({EPOCHS} epochs, batch={BATCH}, lr={LR})...")
+    print(f"\nFine-tuning ({args.epochs} epochs, batch={args.batch}, lr={args.lr}, max_len={max_len})...")
     t0 = time()
     model.fit(
         train_objectives=[(train_dl, loss)],
-        epochs=EPOCHS,
-        warmup_steps=int(0.1 * len(train_dl) * EPOCHS),
-        optimizer_params={"lr": LR},
+        epochs=args.epochs,
+        warmup_steps=int(0.1 * len(train_dl) * args.epochs),
+        optimizer_params={"lr": args.lr},
         show_progress_bar=True,
         output_path=str(OUT),
     )

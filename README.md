@@ -296,13 +296,13 @@ Everything is mirrored on [huggingface.co/dalek-ai](https://huggingface.co/dalek
 | Surface | Link | What it's for |
 |---|---|---|
 | **Space (live demo)** | [agent-tool-router-demo](https://huggingface.co/spaces/dalek-ai/agent-tool-router-demo) | One-click gradio app. Type a task in EN or FR, get the top-3 tools out of 18 000. No install. |
-| **Models** (5) | [dalek-ai](https://huggingface.co/dalek-ai) | Pretrained routers downloadable via `Router.from_pretrained(...)`. See [models](#pretrained-models) below. |
+| **Models** (6) | [dalek-ai](https://huggingface.co/dalek-ai) | Pretrained routers downloadable via `Router.from_pretrained(...)`. See [models](#pretrained-models) below. |
 | **Dataset** | [agent-tool-router-eval-fr](https://huggingface.co/datasets/dalek-ai/agent-tool-router-eval-fr) | 50 parallel EN/FR evaluation queries used to measure the multilingual gap. MIT. |
 
 ### Pretrained models
 
 `Router.from_pretrained("<name>")` downloads from huggingface.co/dalek-ai on
-first call and caches locally. Five pretrained models are published:
+first call and caches locally. Six pretrained models are published:
 
 - **`baseline-v0`** — 265 tool names that appear ≥ 3 times in the training
   corpus, centroids built from task TF-IDF. The smallest model, no extra
@@ -332,6 +332,17 @@ first call and caches locally. Five pretrained models are published:
   (82%→86%) over the default hybrid. ~30 MB. Encoder weights live
   separately at
   [`dalek-ai/minilm-next-v1`](https://huggingface.co/dalek-ai/minilm-next-v1).
+- **`baseline-v1-desc-hybrid-multilingual-next-v1`** — same fine-tune
+  recipe applied to the multilingual L12 encoder. Pareto-dominates the
+  plain multilingual on every LOSO refit source: Hermes +7.3pp, ToolACE
+  +4.3pp, **tau-bench +33.9pp** top-3. Versus the EN-only next-v1: gives
+  up ~3pp on Hermes/ToolACE in exchange for **+4.7pp tau-bench** and
+  multilingual coverage. FR/EN n=50: **54% FR top-3 preserved** (no drift
+  from the EN-only training triples), +2pp EN top-3 over plain
+  multilingual. ~33 MB. Encoder weights at
+  [`dalek-ai/multilingual-next-v1`](https://huggingface.co/dalek-ai/multilingual-next-v1).
+  Use this model for mixed FR/EN catalogs that also benefit from
+  history-aware rerank.
 
 ```python
 from agent_tool_router import Router
