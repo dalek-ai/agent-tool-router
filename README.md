@@ -193,7 +193,11 @@ Markov-1 top-3 rerank K=200 jumps from 54.9% to **75.5%** (+20.6pp).
 The fine-tuned encoder also Pareto-dominates the default English-only
 encoder on the full LOSO refit benchmark (Hermes +1.3pp, ToolACE +6.1pp,
 tau-bench +27.7pp top-3) — supervised next-tool signal generalizes to
-single-task routing too. Reproduce:
+single-task routing too. On the parallel EN/FR n=50 panel, the
+fine-tune does **not** cost any French (26% → 28% top-3, within noise)
+and **adds +4pp English top-3** (82% → 86%) over the default hybrid,
+so it is a free upgrade for English-or-mixed catalogs; the multilingual
+model still owns French (54% top-3). Reproduce:
 `python router/eval/finetune_retriever_next_tool.py` (re-creates the
 encoder) + `python -m agent_tool_router.train_descriptions --backend
 hybrid --alpha 0.5 --encoder-model models/_finetune/minilm-next-v1
@@ -323,7 +327,10 @@ first call and caches locally. Five pretrained models are published:
   hybrid, top-200 rerank) to **75.5%** (+20.6pp), and recall@200 from
   69.6% to 93.1%. On the full English LOSO refit benchmark (n=30 425),
   the fine-tuned encoder Pareto-dominates: Hermes +1.3pp, ToolACE +6.1pp,
-  tau-bench +27.7pp top-3. ~30 MB. Encoder weights live separately at
+  tau-bench +27.7pp top-3. On the parallel EN/FR n=50 panel, no French
+  degradation (26%→28% top-3, within noise) and +4pp English top-3
+  (82%→86%) over the default hybrid. ~30 MB. Encoder weights live
+  separately at
   [`dalek-ai/minilm-next-v1`](https://huggingface.co/dalek-ai/minilm-next-v1).
 
 ```python

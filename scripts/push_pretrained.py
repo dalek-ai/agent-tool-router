@@ -381,6 +381,24 @@ The fine-tune **Pareto-dominates** the default encoder on every
 held-out source. The tau-bench gain (+27.7pp) is the largest single-step
 improvement on that benchmark since the v0 → v1-desc switch.
 
+## FR/EN qualitative probe
+
+The training triples are English-only, so a concern is that the
+encoder over-fits English and loses French alignment. Parallel n=50
+EN/FR queries against the full 18 671-tool catalog (top-3 per call,
+no Markov rerank, hybrid α=0.5):
+
+| model | EN top-3 | FR top-3 | EN top-5 | FR top-5 |
+|---|---:|---:|---:|---:|
+| baseline-v1-desc-hybrid (default `MiniLM-L6`) | 82% | 26% | 90% | 30% |
+| **baseline-v1-desc-hybrid-next-v1** | **86%** | 28% | **94%** | 28% |
+| baseline-v1-desc-hybrid-multilingual | 82% | **54%** | 90% | **62%** |
+
+The fine-tune does **not** degrade French (+2pp top-3, within noise) and
+**adds +4pp top-3 on English** over the default hybrid. For French
+queries the multilingual encoder still dominates (+26pp top-3 vs this
+model). Reproduce: `python -m router.eval.eval_fr_pretrained`.
+
 ## Repo & demo
 
 [github.com/dalek-ai/agent-tool-router](https://github.com/dalek-ai/agent-tool-router) · MIT.
