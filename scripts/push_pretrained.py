@@ -370,6 +370,25 @@ split, seed=17, Markov-1 with α=0.4 rebuilt from the 80% train slice):
 **+23.5pp recall@200, +20.6pp Markov top-3 K=200.** Reproduce:
 `python -m router.eval.eval_next_tool_widen --cache-dir data/cache/next_tool_v1 --model dalek-ai/baseline-v1-desc-hybrid-next-v1`.
 
+## History bigram rerank (Markov-2, ≥ 0.4.0)
+
+Passing a 2-step history triggers stupid backoff to the bigram table
+shipped in this repo (`markov2_counts.npz` + `markov2_keys.npy`, ~25 KB),
+falling back to Markov-1 when the (prev2, prev1) pair is unseen in train.
+Same held-out 2 094 triplets, K=200, best alpha per system:
+
+| system | top-1 | top-3 | top-5 |
+|---|---:|---:|---:|
+| Markov-1 only (≥ 0.3.0) | 52.9% | 75.5% | 81.1% |
+| **Markov-2 backoff** (≥ 0.4.0) | **57.3%** | **77.4%** | **81.6%** |
+| delta | **+4.4pp** | **+1.9pp** | +0.5pp |
+
+On the 775 test rows whose `(prev2, prev1)` bigram is seen in train,
+top-1 jumps **+14.9pp** (61.4% → 76.3%). The headline gain lands on
+tau-bench t≥3 (long-horizon agents): 84.8% → 87.9% top-3 (+3.1pp).
+Reproduce:
+`python -m router.eval.eval_next_tool_markov2 --cache-dir data/cache/next_tool_v1`.
+
 **LOSO refit hybrid (full 18 671-tool catalog, α=0.5, top-3 per call):**
 
 | held_out | n_calls | `MiniLM-L6` | **`minilm-next-v1`** | delta |
@@ -476,6 +495,25 @@ held-out source (Hermes +7.3pp, ToolACE +4.3pp, **tau-bench +33.9pp**).
 Compared to the English-only `minilm-next-v1` fine-tune, it gives up
 ~3pp on Hermes / ToolACE in exchange for an extra +4.7pp on tau-bench
 and the multilingual coverage.
+
+## History bigram rerank (Markov-2, ≥ 0.4.0)
+
+Passing a 2-step history triggers stupid backoff to the bigram table
+shipped in this repo (`markov2_counts.npz` + `markov2_keys.npy`, ~25 KB),
+falling back to Markov-1 when the (prev2, prev1) pair is unseen in train.
+Same held-out 2 094 triplets, K=200, best alpha per system:
+
+| system | top-1 | top-3 | top-5 |
+|---|---:|---:|---:|
+| Markov-1 only (≥ 0.3.0) | 51.7% | 73.7% | 80.1% |
+| **Markov-2 backoff** (≥ 0.4.0) | **56.9%** | **76.2%** | **80.5%** |
+| delta | **+5.2pp** | **+2.5pp** | +0.4pp |
+
+Largest single-position gain: tau-bench t=2 reaches **100% top-3** with
+Markov-2 (was 97.4% with Markov-1). tau-bench t≥3 climbs to **92.9% top-3**
+(+8.1pp). On the 775 test rows whose `(prev2, prev1)` bigram is seen in
+train, top-1 jumps **+14.0pp** (62.5% → 76.5%). Reproduce:
+`python -m router.eval.eval_next_tool_markov2 --cache-dir data/cache/next_tool_multilingual_v1 --model dalek-ai/baseline-v1-desc-hybrid-multilingual-next-v1`.
 
 ## FR/EN qualitative probe (n=50 parallel queries)
 

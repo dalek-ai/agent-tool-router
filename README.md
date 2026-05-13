@@ -228,6 +228,18 @@ Override the mix with `markov_alpha=0.0` (Markov-only) or `1.0`
 (retrieval-only). On `baseline-v1-desc-hybrid` the table adds ~21 KB to
 the download; it's a no-op when `history` is omitted.
 
+**History bigram (Markov-2, ≥ 0.4.0)** — passing two or more previous
+tools triggers stupid backoff to a `(prev2, prev1) → next` bigram table
+shipped in the same model dir (`markov2_counts.npz` + `markov2_keys.npy`,
+~25 KB), falling back to Markov-1 when the bigram is unseen. On the
+fine-tuned `baseline-v1-desc-hybrid-next-v1`, the bigram lifts held-out
+next-tool **top-1 from 52.9% to 57.3% (+4.4pp)** and **top-3 from 75.5%
+to 77.4% (+1.9pp)**, with the biggest single-bucket gain on tau-bench
+t≥3 (long-horizon agents): 84.8% → 87.9% top-3. On the multilingual
+fine-tune the gain is larger: top-1 51.7% → 56.9% (**+5.2pp**), top-3
+73.7% → 76.2% (+2.5pp), and tau-bench t=2 reaches 100% top-3. Reproduce
+with `python router/eval/eval_next_tool_markov2.py`.
+
 ## Use it on your own tools
 
 If your agent has 5 custom tools (`web_search`, `internal_kb`,
@@ -474,16 +486,17 @@ The interesting questions are downstream:
 1. **Cold-start tool routing.** Given a tool you've never seen, can you route
    to it from its description alone? This is the actual hard problem and where
    most of the dataset (95% singleton long-tail) is currently dead weight.
-2. **Sequence routing.** History-aware Markov-1 rerank shipped in
-   `baseline-v1-desc-hybrid` ≥ 0.3.0: top-3 next-tool accuracy 32.7% →
-   54.9% on a held-out test set (n=2094), ~99% of the recall@200
-   ceiling. Widening the retrieval bucket from 50 → 200 lifted top-3 by
-   +6.7pp over the v0.2.0 default at zero additional training cost. A
-   learned MLP rerank was tested and archived (loses to Markov-1 by
-   ~8pp top-3 on top-50; counts dominate dense features at this data
-   scale). Past 54.9% requires improving the retriever itself — wider
-   top-N has diminishing returns, training a retriever directly on the
-   next-tool objective is the next lever.
+2. **Sequence routing.** History-aware reranks shipped in
+   `baseline-v1-desc-hybrid` (Markov-1 ≥ 0.3.0, **Markov-2 stupid
+   backoff ≥ 0.4.0**): top-3 next-tool accuracy 32.7% → 54.9% (Markov-1)
+   → 55.1% (Markov-2) on a held-out test set (n=2094), ~99% of the
+   recall@200 ceiling. Past 54.9% requires improving the retriever
+   itself — training a retriever directly on the next-tool objective
+   (`baseline-v1-desc-hybrid-next-v1`) lifts that ceiling to 75.5%
+   top-3, and Markov-2 takes it to **77.4% (+1.9pp over Markov-1 on
+   next-v1, +5.2pp top-1 on multilingual-next-v1)**. A learned MLP rerank
+   was tested and archived (loses to Markov-1 by ~8pp top-3 on top-50;
+   counts dominate dense features at this data scale).
 3. **Cross-source generalization.** Names don't transfer (LOSO ≈ 0%);
    descriptions do (LOSO ≈ 35–74% top-3 on the two held-out sources with
    broad catalogs; see Caveats). Next step: make `Router` first-class on

@@ -75,6 +75,9 @@ class Router:
         markov_vocab: Optional[list[str]] = None,
         markov_alpha: float = 0.1,
         markov_rerank_n: int = 200,
+        markov2_counts: Optional["sp.csr_matrix"] = None,
+        markov2_keys: Optional[np.ndarray] = None,
+        markov2_lambda: float = 0.4,
     ):
         if vocab is None:
             raise ValueError("Router requires a vocab list.")
@@ -112,6 +115,27 @@ class Router:
             self._markov_idx = None
             self._markov_totals = None
             self._markov_V = 0
+        # Markov-2 (history bigram) with stupid backoff to Markov-1.
+        self.markov2_counts = markov2_counts
+        self.markov2_keys = (
+            np.asarray(markov2_keys, dtype=np.int32) if markov2_keys is not None else None
+        )
+        self.markov2_lambda = float(markov2_lambda)
+        if (
+            self.markov2_counts is not None
+            and self.markov2_keys is not None
+            and self._markov_idx is not None
+        ):
+            self._markov2_keymap = {
+                (int(p2), int(p1)): row
+                for row, (p2, p1) in enumerate(self.markov2_keys)
+            }
+            self._markov2_totals = np.asarray(
+                self.markov2_counts.sum(axis=1)
+            ).ravel().astype(np.int64)
+        else:
+            self._markov2_keymap = None
+            self._markov2_totals = None
 
     @classmethod
     def from_pretrained(cls, name_or_path: str) -> "Router":
@@ -205,6 +229,15 @@ class Router:
                 encoding="utf-8"
             ).splitlines()
 
+        markov2_counts = None
+        markov2_keys = None
+        markov2_counts_path = candidate / "markov2_counts.npz"
+        markov2_keys_path = candidate / "markov2_keys.npy"
+        if markov2_counts_path.exists() and markov2_keys_path.exists():
+            markov2_counts = sp.load_npz(markov2_counts_path).tocsr()
+            markov2_keys = np.load(markov2_keys_path)
+        markov2_lambda = float(cfg.get("markov2_lambda", 0.4))
+
         return cls(
             vec=vec,
             centroids=centroids,
@@ -217,6 +250,9 @@ class Router:
             markov_vocab=markov_vocab,
             markov_alpha=markov_alpha,
             markov_rerank_n=markov_rerank_n,
+            markov2_counts=markov2_counts,
+            markov2_keys=markov2_keys,
+            markov2_lambda=markov2_lambda,
         )
 
     @classmethod
@@ -433,12 +469,18 @@ class Router:
         (baseline-v1-desc-hybrid does), the top-``markov_rerank_n``
         retrieval candidates are rescored with
         ``markov_alpha * retrieval_norm + (1 - markov_alpha) * markov_norm``.
-        Pass ``markov_alpha`` to override the model's default
-        (0.4 on baseline-v1-desc-hybrid, the sweep-best on n=2094 test).
+        Pass ``markov_alpha`` to override the model's default.
 
-        Measured lift on baseline-v1-desc-hybrid (n=2094 held-out triplets):
-        top-1 13.8% → 34.6% (+20.8pp), top-3 32.7% → 48.0% (+15.3pp).
-        Reproduce with router/eval/eval_next_tool_markov.py.
+        When the model also ships Markov-2 artifacts (``markov2_counts.npz``
+        + ``markov2_keys.npy``, on the next-v1 family ≥ 0.4.0) and the
+        history has at least two tools, the Markov score uses stupid backoff
+        (Brants 2007): bigram (prev2, prev1) -> next when seen in training,
+        else lambda * unigram (prev1) -> next, else lambda^2 / V. Backoff
+        penalty ``markov2_lambda`` defaults to 0.4.
+
+        Measured lift on baseline-v1-desc-hybrid-next-v1 (n=2094 held-out):
+        Markov-1 top-3 = 75.5%, **Markov-2 top-3 = 77.4% (+1.9pp), top-1
+        +4.4pp**. Reproduce with router/eval/eval_next_tool_markov2.py.
         """
         single = isinstance(task, str)
         tasks = [task] if single else list(task)
@@ -514,9 +556,17 @@ class Router:
                 ret_norm = (ret_scores - ret_scores.min()) / (
                     ret_scores.max() - ret_scores.min() + 1e-9
                 )
-                mk_scores = self._markov_probs(
-                    h[-1], [self.vocab[i] for i in cand_idx]
-                )
+                cand_names = [self.vocab[i] for i in cand_idx]
+                if (
+                    self.markov2_counts is not None
+                    and self._markov2_keymap is not None
+                    and len(h) >= 2
+                ):
+                    mk_scores = self._markov2_backoff_probs(
+                        h[-2], h[-1], cand_names,
+                    )
+                else:
+                    mk_scores = self._markov_probs(h[-1], cand_names)
                 mk_norm = (mk_scores - mk_scores.min()) / (
                     mk_scores.max() - mk_scores.min() + 1e-9
                 )
@@ -565,6 +615,53 @@ class Router:
             probs[i] = (count + 1.0) / denom
         return probs
 
+    def _markov2_backoff_probs(
+        self, prev2: str, prev1: str, candidates: list[str],
+    ) -> np.ndarray:
+        """Stupid backoff score: use bigram (prev2, prev1) when seen in
+        training, else back off to Markov-1 P(. | prev1) with a lambda
+        penalty, else fall back to uniform with lambda^2.
+
+        Returns a score row (not a calibrated probability — minmax-normalized
+        downstream before blending with retrieval).
+        """
+        V = self._markov_V
+        lam = self.markov2_lambda
+        p2_idx = self._markov_idx.get((prev2 or "").strip().lower())
+        p1_idx = self._markov_idx.get((prev1 or "").strip().lower())
+        bigram_row = None
+        bigram_total = 0.0
+        if (
+            p2_idx is not None
+            and p1_idx is not None
+            and self._markov2_keymap is not None
+        ):
+            row_idx = self._markov2_keymap.get((p2_idx, p1_idx))
+            if row_idx is not None:
+                bigram_row = self.markov2_counts.getrow(row_idx).toarray().ravel()
+                bigram_total = float(self._markov2_totals[row_idx])
+        unigram_row = None
+        unigram_total = 0.0
+        if p1_idx is not None:
+            unigram_row = self.markov_counts.getrow(p1_idx).toarray().ravel()
+            unigram_total = float(self._markov_totals[p1_idx])
+        scores = np.empty(len(candidates), dtype=np.float64)
+        for i, cand in enumerate(candidates):
+            cand_n = (cand or "").strip().lower()
+            j = self._markov_idx.get(cand_n) if self._markov_idx else None
+            if bigram_row is not None and j is not None:
+                cnt = float(bigram_row[j])
+                if cnt > 0.0 and bigram_total > 0.0:
+                    scores[i] = cnt / bigram_total
+                    continue
+            if unigram_row is not None and j is not None and unigram_total > 0.0:
+                cnt1 = float(unigram_row[j])
+                if cnt1 > 0.0:
+                    scores[i] = lam * cnt1 / unigram_total
+                    continue
+            scores[i] = (lam * lam) / max(V, 1)
+        return scores
+
     def save(self, path: str | Path) -> Path:
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
@@ -595,6 +692,15 @@ class Router:
             )
             config["markov_alpha"] = self.markov_alpha
             config["markov_rerank_n"] = self.markov_rerank_n
+        if self.markov2_counts is not None and self.markov2_keys is not None:
+            sp.save_npz(
+                path / "markov2_counts.npz", self.markov2_counts.tocsr()
+            )
+            np.save(
+                path / "markov2_keys.npy",
+                np.asarray(self.markov2_keys, dtype=np.int32),
+            )
+            config["markov2_lambda"] = self.markov2_lambda
         import json as _json
         (path / "config.json").write_text(
             _json.dumps(config, indent=2) + "\n", encoding="utf-8",

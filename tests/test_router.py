@@ -333,6 +333,114 @@ class TestHistoryAwareRerank(unittest.TestCase):
         self.assertLess(out.index("cancel_order"), out.index("modify_order"))
 
 
+class TestMarkov2Backoff(unittest.TestCase):
+    """Markov-2 history-bigram rerank with stupid backoff to Markov-1."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="atr_m2_"))
+        self.r = Router.from_descriptions([
+            ("lookup_order", "Look up a customer order by id"),
+            ("cancel_order", "Cancel a pending customer order"),
+            ("refund_order", "Issue a refund for a canceled order"),
+            ("modify_order", "Change line items on a pending order"),
+            ("exchange_item", "Exchange a delivered item for a different one"),
+            ("search_flights", "Search for flights between airports"),
+        ])
+        names = ["cancel_order", "exchange_item", "lookup_order", "modify_order",
+                 "refund_order", "search_flights"]
+        idx = {n: i for i, n in enumerate(names)}
+        # Markov-1: lookup_order -> modify_order(9), exchange_item(1).
+        rows, cols, data = [], [], []
+        for nxt, c in [("modify_order", 9), ("exchange_item", 1)]:
+            rows.append(idx["lookup_order"])
+            cols.append(idx[nxt])
+            data.append(c)
+        mat1 = sp.csr_matrix(
+            (np.array(data, dtype=np.int32),
+             (np.array(rows, dtype=np.int32), np.array(cols, dtype=np.int32))),
+            shape=(len(names), len(names)),
+        )
+        # Markov-2: (cancel_order, lookup_order) -> exchange_item(8), modify(0).
+        # When the user's last 2 tools are [cancel_order, lookup_order], the
+        # bigram says exchange_item, even though the unigram says modify.
+        bigram_keys = np.array(
+            [[idx["cancel_order"], idx["lookup_order"]]], dtype=np.int32,
+        )
+        mat2 = sp.csr_matrix(
+            (np.array([8], dtype=np.int32),
+             (np.array([0], dtype=np.int32),
+              np.array([idx["exchange_item"]], dtype=np.int32))),
+            shape=(1, len(names)),
+        )
+        self.r.markov_counts = mat1
+        self.r.markov_vocab = names
+        self.r._markov_idx = idx
+        self.r._markov_totals = np.asarray(mat1.sum(axis=1)).ravel().astype(np.int64)
+        self.r._markov_V = len(names)
+        # Keep the prior strong so the unit test exercises the bigram-vs-unigram
+        # decision rather than retrieval blending (we cover blending in
+        # TestHistoryAwareRerank).
+        self.r.markov_alpha = 0.05
+        self.r.markov_rerank_n = 6
+        self.r.markov2_counts = mat2
+        self.r.markov2_keys = bigram_keys
+        self.r._markov2_keymap = {
+            (int(bigram_keys[0, 0]), int(bigram_keys[0, 1])): 0,
+        }
+        self.r._markov2_totals = np.asarray(mat2.sum(axis=1)).ravel().astype(np.int64)
+        self.r.markov2_lambda = 0.4
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_bigram_overrides_unigram(self):
+        """The Markov-2 bigram favors exchange_item; Markov-1 alone would pick
+        modify_order. With a 2-step history hitting the bigram, exchange_item
+        must rank ahead of modify_order."""
+        out = self.r.route(
+            "act on my pending order", k=6,
+            history=["cancel_order", "lookup_order"],
+        )
+        self.assertLess(out.index("exchange_item"), out.index("modify_order"))
+
+    def test_unseen_bigram_backs_off_to_unigram(self):
+        """A 2-step history whose (p2,p1) isn't in the bigram table must
+        produce the same ranking as Markov-1 alone with the same p1."""
+        with_m2 = self.r.route(
+            "act on my pending order", k=6,
+            history=["never_seen_tool", "lookup_order"],
+        )
+        with_m1 = self.r.route(
+            "act on my pending order", k=6,
+            history=["lookup_order"],
+        )
+        self.assertEqual(with_m2, with_m1)
+
+    def test_short_history_uses_markov1(self):
+        """A 1-step history must use the Markov-1 path even though Markov-2
+        is loaded."""
+        with_m1 = self.r.route(
+            "act on my pending order", k=6,
+            history=["lookup_order"],
+        )
+        # modify_order should win (9 obs vs 1 for exchange_item under M1).
+        self.assertLess(with_m1.index("modify_order"), with_m1.index("exchange_item"))
+
+    def test_save_load_roundtrip(self):
+        self.r.save(self.tmpdir / "model")
+        self.assertTrue((self.tmpdir / "model" / "markov2_counts.npz").exists())
+        self.assertTrue((self.tmpdir / "model" / "markov2_keys.npy").exists())
+        r2 = Router.from_pretrained(str(self.tmpdir / "model"))
+        self.assertIsNotNone(r2.markov2_counts)
+        self.assertEqual(r2.markov2_lambda, 0.4)
+        self.assertEqual(r2.markov2_keys.shape, (1, 2))
+        out = r2.route(
+            "act on my pending order", k=6,
+            history=["cancel_order", "lookup_order"],
+        )
+        self.assertLess(out.index("exchange_item"), out.index("modify_order"))
+
+
 class TestConstructorValidation(unittest.TestCase):
     def test_missing_vocab_raises(self):
         with self.assertRaises(ValueError):
