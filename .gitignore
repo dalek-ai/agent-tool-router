@@ -32,6 +32,7 @@ venv/
 CLAUDE.md
 STATE.md
 log.md
+log-phase0-archive.md
 inbox/
 
 # Secrets — never commit

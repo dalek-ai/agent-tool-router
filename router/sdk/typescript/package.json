@@ -1,0 +1,46 @@
+{
+  "name": "@dalek-ai/router",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the agent-tool-router hosted API. Picks the right tools for an agent task from a catalog of 18 000.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "agent",
+    "agents",
+    "tool-routing",
+    "tool-calling",
+    "function-calling",
+    "llm",
+    "mcp",
+    "router"
+  ],
+  "author": "Dalek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dalek-ai/agent-tool-router.git",
+    "directory": "router/sdk/typescript"
+  },
+  "homepage": "https://github.com/dalek-ai/agent-tool-router",
+  "bugs": {
+    "url": "https://github.com/dalek-ai/agent-tool-router/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
