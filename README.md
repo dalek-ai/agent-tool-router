@@ -11,7 +11,7 @@ r.route("cancel my pending order and refund the credit", k=3)
 # ['refundOrder', 'modify_pending_order_items', 'cancel_pending_order']
 ```
 
-Install: `pip install agent-tool-router`. No GPU, no torch, no API key.
+Install: `pip install agent-tool-router` (Python SDK) or `npm install @dalek-ai/router` (TypeScript SDK, wraps the hosted API). No GPU, no torch, no API key.
 
 **En français :** ce router open-source choisit les outils à appeler pour une tâche, parmi un catalogue de 18 000. Le pretrained multilingue sort 54% top-3 sur un panel de 50 tâches en français (`baseline-v1-desc-hybrid-multilingual`), sans coût mesurable côté anglais. Tout est téléchargeable depuis [huggingface.co/dalek-ai](https://huggingface.co/dalek-ai), licence MIT.
 
@@ -31,6 +31,18 @@ Returns top-3 tools + scores + latency. Interactive Swagger UI at
 [/docs](https://dalek-ai-router-api.hf.space/docs). Median latency ~200 ms on a
 shared free CPU (vs ~9 ms locally on CPU). Free tier, rate-limited only by HF
 Spaces quotas. Code: [`router/api/`](router/api/).
+
+From a Node / TypeScript project:
+
+```ts
+import { route } from "@dalek-ai/router";
+
+const result = await route({ task: "annule ma commande", k: 3 });
+console.log(result.tools.map(t => t.name));
+```
+
+`npm install @dalek-ai/router` — zero runtime deps, uses built-in `fetch` (Node 18+).
+Source: [`router/sdk/typescript/`](router/sdk/typescript/).
 
 ## Waitlist & feedback
 
