@@ -15,6 +15,30 @@ Install: `pip install agent-tool-router`. No GPU, no torch, no API key.
 
 **En français :** ce router open-source choisit les outils à appeler pour une tâche, parmi un catalogue de 18 000. Le pretrained multilingue sort 54% top-3 sur un panel de 50 tâches en français (`baseline-v1-desc-hybrid-multilingual`), sans coût mesurable côté anglais. Tout est téléchargeable depuis [huggingface.co/dalek-ai](https://huggingface.co/dalek-ai), licence MIT.
 
+## Try it without installing
+
+A hosted instance runs the `baseline-v1-desc-hybrid-multilingual-next-v1` model at
+[dalek-ai-router-api.hf.space](https://dalek-ai-router-api.hf.space). One curl, no
+signup, no API key:
+
+```bash
+curl -X POST https://dalek-ai-router-api.hf.space/route \
+  -H 'Content-Type: application/json' \
+  -d '{"task": "annule ma commande et rembourse-moi", "k": 3}'
+```
+
+Returns top-3 tools + scores + latency. Interactive Swagger UI at
+[/docs](https://dalek-ai-router-api.hf.space/docs). Median latency ~200 ms on a
+shared free CPU (vs ~9 ms locally on CPU). Free tier, rate-limited only by HF
+Spaces quotas. Code: [`router/api/`](router/api/).
+
+## Waitlist & feedback
+
+If you build agents and want the API beyond the public demo (private models,
+higher rate limits, eval datasets), drop your handle in the
+[Waitlist discussion](https://github.com/dalek-ai/agent-tool-router/discussions).
+Bug reports and feature requests also go there.
+
 ## What this is
 
 Most agent stacks today wire up a fixed bag of tools and let the LLM figure out
